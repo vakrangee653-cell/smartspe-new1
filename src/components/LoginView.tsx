@@ -357,7 +357,17 @@ export default function LoginView({
         context: 'सुरक्षित लॉगिन (Secure Portal Login)'
       })
     })
-    .then(res => res.json())
+    .then(async res => {
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
+      }
+      if (!isJson) {
+        throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
+      }
+      return JSON.parse(text);
+    })
     .then(data => {
       setSendingOtp(false);
       if (data.success) {
@@ -495,7 +505,17 @@ export default function LoginView({
         context: 'नया एडमिन पंजीकरण (New Admin Registration)'
       })
     })
-    .then(res => res.json())
+    .then(async res => {
+      const isJson = res.headers.get('content-type')?.includes('application/json');
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
+      }
+      if (!isJson) {
+        throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
+      }
+      return JSON.parse(text);
+    })
     .then(data => {
       setSendingOtp(false);
       if (data.success) {
@@ -1164,7 +1184,17 @@ export default function LoginView({
                           context: 'पुनः भेजा गया ओटीपी (Resent Security Challenge)'
                         })
                       })
-                      .then(res => res.json())
+                      .then(async res => {
+                        const isJson = res.headers.get('content-type')?.includes('application/json');
+                        const text = await res.text();
+                        if (!res.ok) {
+                          throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
+                        }
+                        if (!isJson) {
+                          throw new Error(`Invalid Response (Non-JSON): ${text.substring(0, 100)}`);
+                        }
+                        return JSON.parse(text);
+                      })
                       .then(data => {
                         setSendingOtp(false);
                         if (data.success) {
