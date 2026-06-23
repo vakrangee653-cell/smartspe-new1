@@ -14,6 +14,8 @@ import {
   Sparkles,
   ShieldCheck
 } from 'lucide-react';
+import { auth, googleProvider } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
 import { AppState, Operator, SecurityLog, UserRole } from '../types';
 import SmartSpeLogo from './SmartSpeLogo';
 
@@ -106,132 +108,25 @@ export default function LoginView({
     return () => clearTimeout(timer);
   }, [loginMethod]);
 
-  // Google Sign-In Event Message Listener
-  React.useEffect(() => {
-    const handleGoogleMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost') && !origin.includes('127.0.0.1')) {
-        return;
-      }
-
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.profile) {
-        const profile = event.data.profile;
-        const googleEmail = (profile.email || '').toLowerCase().trim();
-        const googleName = profile.name || 'Google User';
-
-        // Check if an operator already exists with this email address
-        const matchedOp = state.operators.find(op => op.email.toLowerCase().trim() === googleEmail);
-
-        if (matchedOp) {
-          if (matchedOp.isLockedOut || matchedOp.status === 'Inactive') {
-            setErrorMsg('⚠️ यह खाता निलंबित या लॉक है! कृपया व्यवस्थापक से संपर्क करें। (This Gmail linked account is suspended/locked)');
-            return;
-          }
-
-          const successLog: SecurityLog = {
-            id: `log-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            operatorId: matchedOp.id,
-            operatorName: matchedOp.name,
-            role: matchedOp.role,
-            action: `Google Auth SSO Login Successful: ${googleEmail}`,
-            status: 'Success',
-            ipAddress: browserDetails.ip,
-            device: browserDetails.device,
-            browser: browserDetails.browser
-          };
-
-          onUpdateState({
-            ...state,
-            currentUser: {
-              id: matchedOp.id,
-              name: matchedOp.name,
-              email: matchedOp.email,
-              role: matchedOp.role,
-              phoneNumber: matchedOp.phoneNumber
-            },
-            securityLogs: [successLog, ...state.securityLogs]
-          });
-
-          setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${matchedOp.name} (Signed in via Google)`);
-        } else {
-          // Dynamic on-the-fly registration of a Google-authorized Admin
-          const newOpId = `op-gg-${Date.now().toString().slice(-6)}`;
-          const newOperator: Operator = {
-            id: newOpId,
-            name: googleName,
-            email: googleEmail,
-            role: 'Admin',
-            status: 'Active',
-            walletLimit: 250000,
-            commissionRate: 75,
-            phoneNumber: '+91 99999 99999',
-            failedAttempts: 0,
-            isLockedOut: false
-          };
-
-          const onboardingLog: SecurityLog = {
-            id: `log-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            operatorId: newOpId,
-            operatorName: googleName,
-            role: 'Admin',
-            action: `New Operator Account Created & Verified instantly via Google SSO: ${googleEmail}`,
-            status: 'Success',
-            ipAddress: browserDetails.ip,
-            device: browserDetails.device,
-            browser: browserDetails.browser
-          };
-
-          onUpdateState({
-            ...state,
-            operators: [...state.operators, newOperator],
-            currentUser: {
-              id: newOperator.id,
-              name: newOperator.name,
-              email: newOperator.email,
-              role: newOperator.role,
-              phoneNumber: newOperator.phoneNumber
-            },
-            securityLogs: [onboardingLog, ...state.securityLogs]
-          });
-
-          setSuccessMsg(`🎉 स्वतः-सत्यापन सफल! आपका एडमिन खाता बन गया है: ${googleName}`);
-        }
-      }
-    };
-
-    window.addEventListener('message', handleGoogleMessage);
-    return () => window.removeEventListener('message', handleGoogleMessage);
-  }, [state, onUpdateState]);
-
   const handleGoogleSignIn = async () => {
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      const response = await fetch('/api/auth/url');
-      if (!response.ok) {
-        throw new Error('OAuth URL generation failed on backend');
-      }
-      const { url } = await response.json();
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      const googleEmail = (user.email || '').toLowerCase().trim();
+      const googleName = user.displayName || 'Google User';
 
-      const popupWidth = 550;
-      const popupHeight = 650;
-      const left = window.screen.width / 2 - popupWidth / 2;
-      const top = window.screen.height / 2 - popupHeight / 2;
-
-      const authWindow = window.open(
-        url,
-        'google_oauth_popup',
-        `width=${popupWidth},height=${popupHeight},top=${top},left=${left},scrollbars=yes,status=yes`
-      );
-
-      if (!authWindow) {
-        setErrorMsg('⚠️ कृपया ब्राउज़र में पॉपअप अनुमति सक्षम करें! (Please allow popups in your browser settings)');
-      }
+      setSuccessMsg(`🎉 Google लॉगिन सफल! स्वागत है, ${googleName}. डेटा लोड हो रहा है...`);
     } catch (err: any) {
-      console.error(err);
-      setErrorMsg(`❌ Google Sign-In विफल: ${err.message || 'पॉपअप शुरू करने में असमर्थ'}`);
+      console.error('[Firebase Auth Error]', err);
+      let localizedMsg = err.message || 'पॉपअप शुरू करने में असमर्थ';
+      if (err.code === 'auth/popup-blocked') {
+        localizedMsg = 'ब्राउज़र ने पॉपअप ब्लॉक कर दिया है। कृपया पॉपअप की अनुमति दें! (Popup was blocked by the browser)';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        localizedMsg = 'लॉगिन पॉपअप बंद कर दिया गया। (Login popup was closed by user)';
+      }
+      setErrorMsg(`❌ Google Sign-In विफल: ${localizedMsg}`);
     }
   };
 
@@ -544,91 +439,33 @@ export default function LoginView({
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-300 ${
-      darkMode ? 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-black text-white' : 'bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50 via-[#F1F5F9] to-[#E2E8F0] text-slate-900'
+    <div className={`min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 transition-colors duration-300 ${
+      darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
     }`}>
       {/* Absolute Dark Mode Controls */}
       <div className="absolute top-4 right-4">
         <button
           onClick={() => setDarkMode(!darkMode)}
-          className={`p-2.5 rounded-full border shadow-sm transition-all cursor-pointer ${
-            darkMode ? 'bg-slate-900 border-slate-800 text-amber-400 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-550'
+          className={`p-2 px-3 rounded-full border shadow-sm text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            darkMode ? 'bg-slate-900 border-slate-800 text-amber-400 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100'
           }`}
         >
           {darkMode ? '☀️ Light' : '🌙 Dark'}
         </button>
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+      <div className="w-full max-w-md space-y-6">
         
-        {/* Left Branding and Dynamic Fingerprint Area */}
-        <div className="col-span-1 lg:col-span-5 space-y-6 text-center lg:text-left px-4">
-          <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
-            <Fingerprint size={14} className="animate-pulse" />
-            SECURED WITH JWT & DEVICE BINDING
-          </div>
-
-          <div className="space-y-4 flex flex-col items-center lg:items-start">
-            <SmartSpeLogo size={110} showText={true} showTagline={true} className="transform scale-110 lg:scale-125 origin-center lg:origin-left transition-all mb-2" />
-            <p className={`text-sm tracking-normal max-w-sm mx-auto lg:mx-0 ${darkMode ? 'text-slate-400' : 'text-slate-550'}`}>
-              Enterprise CSP Core (ग्राहक सेवा केंद्र) & Automated Rajasthan eMitra Management Utility Node.
-            </p>
-          </div>
-
-          {/* Browser Tracking Diagnostics Box */}
-          <div className={`p-4 rounded-2xl border text-left space-y-3 relative overflow-hidden backdrop-blur-sm ${
-            darkMode ? 'bg-slate-900/60 border-slate-800/80 text-slate-350' : 'bg-white/70 border-slate-200 text-slate-600'
-          }`}>
-            <div className="flex items-center justify-between text-xs font-bold border-b pb-2 border-slate-200/50 dark:border-slate-800/50">
-              <span className="flex items-center gap-1.5 font-mono text-indigo-500">
-                <Compass size={13} /> TERMINAL DIAGNOSTICS
-              </span>
-              <span className="text-[10px] text-emerald-500 font-mono flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" /> LIVE CONNECT
-              </span>
-            </div>
-
-            {isFingerprinting ? (
-              <div className="py-6 text-center space-y-2">
-                <div className="w-6 h-6 border-2 border-t-transparent border-indigo-600 rounded-full animate-spin mx-auto" />
-                <span className="text-[11px] font-mono text-slate-400">Fingerprinting Active Session Node...</span>
-              </div>
-            ) : (
-              <div className="space-y-1.5 font-mono text-[10px]">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Gateway Static IP:</span>
-                  <span className="text-slate-900 dark:text-slate-200 font-bold">{browserDetails.ip}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Local Location:</span>
-                  <span className="text-slate-900 dark:text-slate-200 text-right truncate pl-4">{browserDetails.location}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Platform Specs:</span>
-                  <span className="text-slate-900 dark:text-slate-200">{browserDetails.device}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Browser Vendor:</span>
-                  <span className="text-slate-900 dark:text-slate-200">{browserDetails.browser}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pixel Resolution:</span>
-                  <span className="text-slate-900 dark:text-slate-200">{browserDetails.resolution}</span>
-                </div>
-
-                <div className="mt-3 pt-2 border-t border-slate-200/50 dark:border-slate-800/50 flex flex-col gap-1">
-                  <span className="text-[9px] text-slate-400 block">DEVICE BINDING FINGERPRINT SIGNATURE (JWT):</span>
-                  <span className="text-[10px] font-bold text-indigo-500 break-all select-all font-sans">
-                    {fingerprintHash}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+        {/* Branding Head - Centered */}
+        <div className="flex flex-col items-center text-center space-y-3">
+          <SmartSpeLogo size={80} showText={true} showTagline={true} className="transform hover:scale-105 transition-all duration-300" />
+          <p className={`text-xs max-w-xs ${darkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+            Secure Rajasthan eMitra & CSP Multi-Wallet Terminal node handles digital payments directly.
+          </p>
         </div>
 
         {/* Right Authentication Form Container with demo accounts */}
-        <div className="col-span-1 lg:col-span-7 space-y-6">
+        <div className="space-y-6">
           
           {/* Main Login or Registration Card */}
           <div className={`p-6 md:p-8 rounded-3xl border shadow-xl relative overflow-hidden backdrop-blur-md min-h-[480px] ${

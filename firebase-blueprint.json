@@ -1,0 +1,25 @@
+{
+  "collections": {
+    "user_states": {
+      "description": "Stores user-specific application state (AppState) for data persistence across sessions.",
+      "documents": {
+        "{userId}": {
+          "schema": {
+            "currentUser": "object",
+            "wallet": "object",
+            "aepsWallet": "object",
+            "emitraWallet": "object",
+            "operators": "array",
+            "customers": "array",
+            "transactions": "array",
+            "emitraApplications": "array",
+            "offlineWork": "array",
+            "securityLogs": "array",
+            "expenses": "array",
+            "commissionSettings": "object"
+          }
+        }
+      }
+    }
+  }
+}

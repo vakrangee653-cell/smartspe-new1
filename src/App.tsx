@@ -17,7 +17,9 @@ import ExpensesView from './components/ExpensesView';
 import LoginView from './components/LoginView';
 
 import { getInitialState, saveState } from './data';
-import { AppState } from './types';
+import { AppState, UserRole } from './types';
+import { auth, saveStateToFirestore, getStateFromFirestore } from './firebase';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { 
   Fingerprint, 
   Lock, 
@@ -40,20 +42,83 @@ export default function App() {
   const [passcode, setPasscode] = React.useState('');
   const [passcodeError, setPasscodeError] = React.useState('');
   const [liveTime, setLiveTime] = React.useState('');
+  const [firebaseLoading, setFirebaseLoading] = React.useState(true);
 
   // Pre-action triggers for navigation shortcuts
   const [activePreAction, setActivePreAction] = React.useState<string | null>(null);
 
-  // Synchronize state changes to localStorage
+  // Real-time Firebase Auth Status Listener and Firestore Synchronizer
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setFirebaseLoading(true);
+      if (firebaseUser) {
+        console.log('[App] Auth State Changed: User Signed In', firebaseUser.uid);
+        const fetchedState = await getStateFromFirestore(firebaseUser.uid);
+        if (fetchedState) {
+          // Verify currentUser represents this active Firebase authenticated profile
+          if (!fetchedState.currentUser || fetchedState.currentUser.id !== firebaseUser.uid) {
+            fetchedState.currentUser = {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'Vakrangee Operator',
+              email: firebaseUser.email || '',
+              role: (fetchedState.currentUser?.role || 'Super Admin') as UserRole,
+              phoneNumber: firebaseUser.phoneNumber || fetchedState.currentUser?.phoneNumber || '+91 99999 55555'
+            };
+          }
+          setState(fetchedState);
+          saveState(fetchedState);
+        } else {
+          // Initialize fresh user workspace document in Firestore
+          const baseState = getInitialState();
+          const fbInitState = {
+            ...baseState,
+            currentUser: {
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'Vakrangee Operator',
+              email: firebaseUser.email || '',
+              role: ((firebaseUser.email?.toLowerCase().includes('admin') || firebaseUser.email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin') as UserRole,
+              phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
+            }
+          };
+          setState(fbInitState);
+          saveState(fbInitState);
+          await saveStateToFirestore(firebaseUser.uid, fbInitState);
+        }
+      } else {
+        // No Firebase user. We can keep whatever is in local state but reset Auth UI
+        const localState = getInitialState();
+        if (localState.currentUser && localState.currentUser.id.startsWith('gg-')) {
+          localState.currentUser = null;
+          saveState(localState);
+        }
+        setState(localState);
+      }
+      setFirebaseLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Synchronize state changes to localStorage and cloud Firestore
   const handleUpdateState = (newState: AppState) => {
     setState(newState);
     saveState(newState);
+    
+    if (auth.currentUser) {
+      saveStateToFirestore(auth.currentUser.uid, newState);
+    }
   };
 
   // Handle log out
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setActiveTab('dashboard');
     setIsLocked(false);
+    
+    try {
+      await firebaseSignOut(auth);
+    } catch (err) {
+      console.error('[Firebase Signout Error]', err);
+    }
+
     handleUpdateState({
       ...state,
       currentUser: null
@@ -195,6 +260,31 @@ export default function App() {
         return <div className="text-center py-20">View not resolved.</div>;
     }
   };
+
+  // 0. FIREBASE STATE TRANSITION SPINNER GUARD
+  if (firebaseLoading) {
+    return (
+      <div className={`min-h-screen flex flex-col items-center justify-center p-6 ${
+        darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'
+      }`}>
+        <div className="flex flex-col items-center space-y-4">
+          <div className="relative flex items-center justify-center">
+            {/* Elegant glowing active ring spinner */}
+            <div className="w-16 h-16 rounded-full border-4 border-indigo-650/10 border-t-indigo-600 animate-spin" />
+            <div className="absolute w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 opacity-80 blur-xs" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-sm font-bold tracking-tight uppercase font-display">
+              SmartSPE Secure Workspace
+            </h3>
+            <p className="text-[10px] uppercase font-mono tracking-wider text-slate-400 mt-1 animate-pulse">
+              Firebase Synced State Loading...
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // 1. SECURE AUTHENTICATION LOGIN GUARD
   if (!state.currentUser) {
