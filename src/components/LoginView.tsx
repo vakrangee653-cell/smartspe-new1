@@ -11,7 +11,8 @@ import {
   HelpCircle,
   AlertTriangle,
   Compass,
-  Sparkles
+  Sparkles,
+  ShieldCheck
 } from 'lucide-react';
 import { AppState, Operator, SecurityLog, UserRole } from '../types';
 import SmartSpeLogo from './SmartSpeLogo';
@@ -60,6 +61,16 @@ export default function LoginView({
   const [regConfirmPassword, setRegConfirmPassword] = React.useState('');
   const [regRole, setRegRole] = React.useState<UserRole>('Admin');
   const [showRegPassword, setShowRegPassword] = React.useState(false);
+
+  // Real Gmail OTP States
+  const [activeOtpFlow, setActiveOtpFlow] = React.useState<'none' | 'login_otp' | 'register_otp'>('none');
+  const [sessionOtp, setSessionOtp] = React.useState('');
+  const [otpSentMessage, setOtpSentMessage] = React.useState('');
+  const [tempRegisteredOp, setTempRegisteredOp] = React.useState<Operator | null>(null);
+  const [tempLoginOp, setTempLoginOp] = React.useState<Operator | null>(null);
+  const [userOtpInput, setUserOtpInput] = React.useState('');
+  const [sendingOtp, setSendingOtp] = React.useState(false);
+  const [otpIsSimulated, setOtpIsSimulated] = React.useState(false);
 
   // Dynamic Environment Check: Auto-detects if running on localhost / AI Studio development preview URLs
   const isDevEnv = typeof window !== 'undefined' && (
@@ -327,48 +338,44 @@ export default function LoginView({
       return;
     }
 
-    // Login Successful!
-    // Reset failed login count
-    const updatedOperators = state.operators.map(op => {
-      if (op.id === operatorMatched.id) {
-        return {
-          ...op,
-          failedAttempts: 0
-        };
+    // Login Successful! Intercept to trigger secure Gmail OTP Verification
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSessionOtp(code);
+    setActiveOtpFlow('login_otp');
+    setTempLoginOp(operatorMatched);
+    setUserOtpInput('');
+    setSendingOtp(true);
+    setOtpSentMessage('Sending safe verification code to Gmail...');
+
+    fetch('/api/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: operatorMatched.email,
+        otp: code,
+        name: operatorMatched.name,
+        context: 'सुरक्षित लॉगिन (Secure Portal Login)'
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      setSendingOtp(false);
+      if (data.success) {
+        if (data.simulated) {
+          setOtpIsSimulated(true);
+          setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
+        } else {
+          setOtpIsSimulated(false);
+          setOtpSentMessage(`📧 OTP successfully sent to secure Gmail: ${operatorMatched.email}`);
+        }
+      } else {
+        setErrorMsg(`❌ OTP sending failed: ${data.error || 'Server SMTP failed'}`);
       }
-      return op;
+    })
+    .catch(err => {
+      setSendingOtp(false);
+      setErrorMsg(`❌ API Connection Failed: ${err.message}`);
     });
-
-    const successLog: SecurityLog = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      operatorId: operatorMatched.id,
-      operatorName: operatorMatched.name,
-      role: operatorMatched.role,
-      action: `Secure Authentication Success (JWT Fingerprint signed: ${fingerprintHash})`,
-      status: 'Success',
-      ipAddress: browserDetails.ip,
-      device: browserDetails.device,
-      browser: browserDetails.browser
-    };
-
-    setSuccessMsg(`प्रवेश स्वीकृत: ${operatorMatched.name} (${operatorMatched.role})!`);
-    
-    // Trigger successful layout change
-    setTimeout(() => {
-      onUpdateState({
-        ...state,
-        currentUser: {
-          id: operatorMatched.id,
-          name: `${operatorMatched.name} (${operatorMatched.role === 'Super Admin' ? 'Super Admin' : operatorMatched.role})`,
-          email: operatorMatched.email,
-          role: operatorMatched.role,
-          phoneNumber: operatorMatched.phoneNumber
-        },
-        operators: updatedOperators,
-        securityLogs: [successLog, ...state.securityLogs]
-      });
-    }, 1000);
   };
 
   // Preset demo bypass login
@@ -453,7 +460,7 @@ export default function LoginView({
       return;
     }
 
-    // Create new Operator
+    // Create new Operator but don't save yet - verify email via OTP first
     const newOpId = `op-${Math.random().toString(36).substring(2, 8)}`;
     const newOperator: Operator = {
       id: newOpId,
@@ -469,48 +476,51 @@ export default function LoginView({
       isLockedOut: false
     };
 
-    // Audit logs
-    const registrationLog: SecurityLog = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      operatorId: newOpId,
-      operatorName: trimmedName,
-      role: 'Admin',
-      action: `Self Admin/Branch Manager Registration Successful (${trimmedName})`,
-      status: 'Success',
-      ipAddress: browserDetails.ip,
-      device: browserDetails.device,
-      browser: browserDetails.browser
-    };
+    // Registration Successful, but let's trigger the registration secure OTP verification via Gmail!
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    setSessionOtp(code);
+    setActiveOtpFlow('register_otp');
+    setTempRegisteredOp(newOperator);
+    setUserOtpInput('');
+    setSendingOtp(true);
+    setOtpSentMessage('Generating smart registration lock key...');
 
-    // Update state with newly registered user
-    onUpdateState({
-      ...state,
-      operators: [...state.operators, newOperator],
-      securityLogs: [registrationLog, ...state.securityLogs]
+    fetch('/api/send-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: trimmedEmail,
+        otp: code,
+        name: trimmedName,
+        context: 'नया एडमिन पंजीकरण (New Admin Registration)'
+      })
+    })
+    .then(res => res.json())
+    .then(data => {
+      setSendingOtp(false);
+      if (data.success) {
+        if (data.simulated) {
+          setOtpIsSimulated(true);
+          setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
+        } else {
+          setOtpIsSimulated(false);
+          setOtpSentMessage(`📧 Registration OTP sent safely to Gmail: ${trimmedEmail}`);
+        }
+      } else {
+        setErrorMsg(`❌ OTP sending failed: ${data.error}`);
+      }
+    })
+    .catch(err => {
+      setSendingOtp(false);
+      setErrorMsg(`❌ Register API Connection Failed: ${err.message}`);
     });
 
-    setSuccessMsg('🎉 पंजीकरण सफल! अब आप लॉगिन कर सकते हैं। (Registration successful! You can now login)');
-    
     // Clear registration fields
     setRegName('');
     setRegEmail('');
     setRegPhone('');
     setRegPassword('');
     setRegConfirmPassword('');
-    
-    // Smooth view change back to login after 2s
-    setTimeout(() => {
-      setViewMode('login');
-      // pre-fill logins for convenience
-      if (loginMethod === 'email') {
-        setEmailInput(trimmedEmail);
-      } else {
-        setPhoneInput(trimmedPhone);
-      }
-      setPasswordInput(pass);
-      setSuccessMsg('');
-    }, 2000);
   };
 
   return (
@@ -996,7 +1006,206 @@ export default function LoginView({
               </div>
             )}
 
-            {viewMode === 'login' ? (
+            {activeOtpFlow !== 'none' ? (
+              /* GMAIL SECURITY OTP CHALLENGE VIEW */
+              <div className="space-y-4 py-2 text-left animate-fade-in">
+                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-500 space-y-2">
+                  <div className="flex items-center gap-2">
+                     <ShieldCheck size={18} className="text-amber-500 animate-pulse" />
+                     <span className="text-[11px] font-bold uppercase tracking-wider">🔐 GMAIL IDENTITY CHALLENGE (ईमेल सुरक्षा जांच)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-300 leading-normal font-sans">
+                     सुरक्षित सुरक्षा नीतियों के तहत, इस ईमेल पते पर एक गतिशील ६-अंकीय ओटीपी कोड भेजा गया है। कृपया अपने Gmail इनबॉक्स (या स्पैम फोल्डर) की जाँच करें।
+                  </p>
+                  
+                  {/* Automated Simulated/Real visual notification indicator */}
+                  <div className="p-3 bg-slate-950 border border-slate-900 rounded-xl space-y-1.5 mt-2 font-mono relative overflow-hidden text-xs">
+                    <div className="absolute top-0 right-0 px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-[8px] uppercase font-bold rounded-bl-lg">
+                      {otpIsSimulated ? "Simulated Mode" : "Real SMTP Gateway"}
+                    </div>
+                    <span className="text-[9px] text-slate-400 block">💬 EMAIL TO ({activeOtpFlow === 'login_otp' ? tempLoginOp?.email : tempRegisteredOp?.email}):</span>
+                    
+                    {otpIsSimulated ? (
+                      <div className="mt-1 space-y-1">
+                        <p className="text-white text-[11px] font-bold">
+                          Your safe reset OTP is: <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md text-sm font-black tracking-widest">{sessionOtp}</span>
+                        </p>
+                        <p className="text-[9px] text-amber-400 font-sans leading-tight">
+                          💡 Tip: To receive real emails in your actual inbox, configure <strong className="font-mono">SMTP_USER</strong> and <strong className="font-mono">SMTP_PASS</strong> in your Settings/Secrets.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="mt-1">
+                        <p className="text-white text-[11px] font-bold flex items-center gap-1">
+                          <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                          <span>Mailing code to Gmail... check inbox!</span>
+                        </p>
+                        <p className="text-[9.5px] text-slate-400 leading-normal font-sans">
+                          A real email has been dispatched via Gmail SMTP server gateway.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {otpSentMessage && (
+                  <p className="text-center font-mono text-[10px] text-emerald-500 bg-emerald-500/5 py-1.5 px-3 rounded-lg border border-emerald-500/10">
+                    ✅ {otpSentMessage}
+                  </p>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] uppercase text-indigo-400 font-bold block pb-1">Enter 6-Digit Gmail OTP*</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    placeholder="Type 6-digit OTP code here"
+                    value={userOtpInput}
+                    onChange={(e) => setUserOtpInput(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-4 py-2.5 bg-slate-100 dark:bg-slate-950 border border-slate-300 dark:border-slate-850 rounded-xl text-center font-mono font-bold text-slate-900 dark:text-white text-sm focus:border-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={() => {
+                      if (userOtpInput.trim() === sessionOtp) {
+                        // Confirm success!
+                        if (activeOtpFlow === 'login_otp' && tempLoginOp) {
+                          // Complete login
+                          const successLog: SecurityLog = {
+                            id: `log-${Date.now()}`,
+                            timestamp: new Date().toISOString(),
+                            operatorId: tempLoginOp.id,
+                            operatorName: tempLoginOp.name,
+                            role: tempLoginOp.role,
+                            action: `Google Auth 2FA Verified: ${tempLoginOp.email}`,
+                            status: 'Success',
+                            ipAddress: browserDetails.ip,
+                            device: browserDetails.device,
+                            browser: browserDetails.browser
+                          };
+
+                          onUpdateState({
+                            ...state,
+                            currentUser: {
+                              id: tempLoginOp.id,
+                              name: `${tempLoginOp.name} (${tempLoginOp.role === 'Super Admin' ? 'Super Admin' : tempLoginOp.role})`,
+                              email: tempLoginOp.email,
+                              role: tempLoginOp.role,
+                              phoneNumber: tempLoginOp.phoneNumber
+                            },
+                            securityLogs: [successLog, ...state.securityLogs]
+                          });
+                          setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${tempLoginOp.name} (Logged in via Google OTP)`);
+                        } else if (activeOtpFlow === 'register_otp' && tempRegisteredOp) {
+                          // Complete registration
+                          onUpdateState({
+                            ...state,
+                            operators: [...state.operators, tempRegisteredOp],
+                            securityLogs: [
+                              {
+                                id: `log-${Date.now()}`,
+                                timestamp: new Date().toISOString(),
+                                operatorId: tempRegisteredOp.id,
+                                operatorName: tempRegisteredOp.name,
+                                role: 'Admin',
+                                action: `Self Admin Registration Verified via Gmail OTP: ${tempRegisteredOp.email}`,
+                                status: 'Success',
+                                ipAddress: browserDetails.ip,
+                                device: browserDetails.device,
+                                browser: browserDetails.browser
+                              },
+                              ...state.securityLogs
+                            ]
+                          });
+                          setSuccessMsg('🎉 आपका ईमेल और पासवर्ड सफलतापूर्वक सत्यापित किया गया है! (Account verified and created successfully!)');
+                          setTimeout(() => {
+                            setViewMode('login');
+                            setEmailInput(tempRegisteredOp.email);
+                            setPasswordInput(tempRegisteredOp.password || '');
+                          }, 1500);
+                        }
+
+                        // Close security view
+                        setActiveOtpFlow('none');
+                        setSessionOtp('');
+                        setUserOtpInput('');
+                        setOtpSentMessage('');
+                      } else {
+                        setErrorMsg('❌ अवैध ओटीपी कोड! कृपया अपने ईमेल पर भेजा गया सही ६-अंकीय कोड डालें।');
+                      }
+                    }}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold uppercase cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    सत्यापित करें (Verify OTP)
+                  </button>
+                  <button
+                    type="button"
+                    disabled={sendingOtp}
+                    onClick={() => {
+                      const code = Math.floor(100000 + Math.random() * 900000).toString();
+                      setSessionOtp(code);
+                      setSendingOtp(true);
+                      setErrorMsg('');
+                      
+                      const targetEmail = activeOtpFlow === 'login_otp' ? tempLoginOp?.email : tempRegisteredOp?.email;
+                      const targetName = activeOtpFlow === 'login_otp' ? tempLoginOp?.name : tempRegisteredOp?.name;
+
+                      fetch('/api/send-otp', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          email: targetEmail,
+                          otp: code,
+                          name: targetName,
+                          context: 'पुनः भेजा गया ओटीपी (Resent Security Challenge)'
+                        })
+                      })
+                      .then(res => res.json())
+                      .then(data => {
+                        setSendingOtp(false);
+                        if (data.success) {
+                          if (data.simulated) {
+                            setOtpIsSimulated(true);
+                            setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
+                          } else {
+                            setOtpIsSimulated(false);
+                            setOtpSentMessage(`📧 New OTP sent safely to Gmail: ${targetEmail}`);
+                          }
+                        } else {
+                          setErrorMsg(`❌ Resend failed: ${data.error}`);
+                        }
+                      })
+                      .catch(err => {
+                        setSendingOtp(false);
+                        setErrorMsg(`❌ Resend Failed: ${err.message}`);
+                      });
+                    }}
+                    className="px-4 py-2.5 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-850 dark:text-slate-300 rounded-xl text-xs font-bold cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    री-सेंड (Resend)
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveOtpFlow('none');
+                    setSessionOtp('');
+                    setUserOtpInput('');
+                    setOtpSentMessage('');
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className="w-full py-2 text-center text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-white text-xs font-bold border border-slate-200 dark:border-slate-800 rounded-xl cursor-pointer"
+                >
+                  रद्द करें और वापस जाएं (Cancel Verification)
+                </button>
+              </div>
+            ) : viewMode === 'login' ? (
               <>
                 {/* Dual Login Tabs Selection */}
                 <div className="flex border-b border-slate-200 dark:border-slate-800 mt-4 mb-4">

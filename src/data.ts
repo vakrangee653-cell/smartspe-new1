@@ -23,8 +23,8 @@ const hoursAgo = (hours: number, mins = 0): string => {
 const INITIAL_OPERATORS: Operator[] = [
   {
     id: 'op-super',
-    name: 'Super Admin Secure',
-    email: 'superadmin@smartspe.com',
+    name: 'Vakrangee Super Admin',
+    email: 'vakrangee653@gmail.com',
     role: 'Super Admin',
     status: 'Active',
     walletLimit: 1000000,
@@ -840,6 +840,31 @@ export const getInitialState = (): AppState => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        
+        // Force upgrade/sync vakrangee653@gmail.com super admin configuration
+        if (parsed.operators) {
+          const hasVakrangee = parsed.operators.some((o: any) => o.email === 'vakrangee653@gmail.com');
+          if (!hasVakrangee) {
+            parsed.operators = parsed.operators.map((o: any) => {
+              if (o.id === 'op-super' || o.role === 'Super Admin') {
+                return {
+                  ...o,
+                  id: 'op-super',
+                  email: 'vakrangee653@gmail.com',
+                  name: 'Vakrangee Super Admin',
+                  password: 'superadmin123'
+                };
+              }
+              return o;
+            });
+            
+            if (parsed.currentUser && (parsed.currentUser.id === 'op-super' || parsed.currentUser.role === 'Super Admin')) {
+              parsed.currentUser.email = 'vakrangee653@gmail.com';
+              parsed.currentUser.name = 'Vakrangee Super Admin (Super Admin)';
+            }
+          }
+        }
+
         // Ensure standard date objects match correctly
         if (parsed.commissionSettings) {
           if (!parsed.commissionSettings.emitraFees) {
@@ -878,8 +903,8 @@ export const getInitialState = (): AppState => {
   const state: AppState = {
     currentUser: {
       id: 'op-super',
-      name: 'Super Admin Secure',
-      email: 'superadmin@smartspe.com',
+      name: 'Vakrangee Super Admin',
+      email: 'vakrangee653@gmail.com',
       role: 'Super Admin',
       phoneNumber: '+91 90010 12345'
     },

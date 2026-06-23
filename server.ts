@@ -1,12 +1,87 @@
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import nodemailer from 'nodemailer';
 
 const app = express();
 const PORT = 3000;
 
 // Enable JSON parse requests
 app.use(express.json());
+
+// API endpoint to send a verification OTP via Gmail (Nodemailer)
+app.post('/api/send-otp', async (req, res) => {
+  const { email, otp, name, context } = req.body;
+  if (!email || !otp) {
+    return res.status(400).json({ success: false, error: 'Email and OTP are required.' });
+  }
+
+  const smtpUser = process.env.SMTP_USER || '';
+  const smtpPass = process.env.SMTP_PASS || '';
+
+  if (!smtpUser || !smtpPass) {
+    console.log(`[SMTP SIMULATOR] Send OTP ${otp} to ${email}`);
+    return res.json({ 
+      success: true, 
+      simulated: true, 
+      message: 'SMTP/Gmail secrets missing in Environment. Simulating OTP code delivery.',
+      otp: otp
+    });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      }
+    });
+
+    const contextText = context || 'Verification Security Challenge';
+
+    const mailOptions = {
+      from: `"SmartSpe Security Gateway" <${smtpUser}>`,
+      to: email,
+      subject: `🗝️ Verification Security OTP: ${otp}`,
+      html: `
+        <div style="font-family: -apple-system, sans-serif; max-width: 500px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #f8fafc;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #4f46e5; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">SmartSpe Portal</h1>
+            <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Secure Identity Verification Gateway</p>
+          </div>
+          <div style="background-color: #ffffff; padding: 24px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #f1f5f9;">
+            <p style="font-size: 14px; color: #334155; margin-top: 0;">Heey <strong>${name || 'User'}</strong>,</p>
+            <p style="font-size: 14px; color: #475569; line-height: 1.6;">
+              SmartSpe पोर्टल पर लॉगिन या पंजीकरण सत्यापन के लिए आपका ६-अंकीय सुरक्षा ओटीपी कोड (Security OTP Code) नीचे दिया गया है:
+            </p>
+            <div style="text-align: center; margin: 28px 0;">
+              <span style="display: inline-block; font-family: monospace; font-size: 36px; font-weight: 900; letter-spacing: 6px; color: #4f46e5; background-color: #f5f3ff; padding: 12px 28px; border-radius: 10px; border: 2px dashed #c084fc;">${otp}</span>
+            </div>
+            <p style="font-size: 12px; color: #ef4444; font-weight: bold; margin-bottom: 20px; text-align: center;">
+              ⚠️ सुरक्षा चेतावनी: यह कोड केवल ५ मिनट के लिए वैध है। इसे किसी के भी साथ साझा न करें।
+            </p>
+            <p style="font-size: 12px; color: #64748b; border-top: 1px solid #f1f5f9; padding-top: 16px; margin: 0; line-height: 1.5;">
+              <strong>सत्यापन विवरण (Audit Log):</strong><br>
+              प्रकार: ${contextText}<br>
+              समय: ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })} IST<br>
+              स्थान: India (Vakrangee Point Secure Node)
+            </p>
+          </div>
+          <div style="text-align: center; margin-top: 24px; font-size: 11px; color: #94a3b8;">
+            &copy; 2026 SmartSpe Financial Services. All rights reserved.
+          </div>
+        </div>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    return res.json({ success: true, simulated: false, message: 'OTP sent directly to Gmail!' });
+  } catch (error: any) {
+    console.error('Nodemailer error:', error);
+    return res.status(500).json({ success: false, error: error.message || 'SMTP transfer transaction failed.' });
+  }
+});
 
 // API endpoints to support Google Sign-In (OAuth)
 app.get('/api/auth/url', (req, res) => {
