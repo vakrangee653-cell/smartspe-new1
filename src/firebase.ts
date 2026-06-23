@@ -1,6 +1,9 @@
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
+  initializeAuth,
+  browserLocalPersistence,
+  inMemoryPersistence,
   GoogleAuthProvider, 
   signInWithPopup, 
   signOut,
@@ -25,12 +28,48 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+
+// Initialize Auth with standard or in-memory persistence fallback for sandboxed iframes
+let tempAuth;
+try {
+  tempAuth = getAuth(app);
+} catch (error) {
+  console.warn('[Firebase] Default auth initialization blocked, falling back to in-memory persistence:', error);
+  try {
+    tempAuth = initializeAuth(app, {
+      persistence: inMemoryPersistence
+    });
+  } catch (err) {
+    console.error('[Firebase] Fatal: Failed to initialize in-memory auth, using safe mock object:', err);
+    tempAuth = {
+      currentUser: null,
+      onAuthStateChanged: (cb: any) => {
+        // Return a dummy unsubscriber
+        cb(null);
+        return () => {};
+      },
+      signOut: async () => {},
+    } as any;
+  }
+}
+
+export const auth = tempAuth;
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-// Initialize Firestore targeting the specific custom database ID
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Initialize Firestore targeting the specific custom database ID with high resiliency
+let tempDb;
+try {
+  tempDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+} catch (error) {
+  console.warn('[Firebase] Failed to initialize firestore due to sandbox policies, using resilient mock:', error);
+  tempDb = {
+    collection: () => ({ doc: () => ({}) }),
+    doc: () => ({}),
+  } as any;
+}
+
+export const db = tempDb;
 
 /**
  * Saves the given application state to Firestore for a specific user ID.

@@ -834,11 +834,11 @@ const INITIAL_COMMISSION_SETTINGS: AppState['commissionSettings'] = {
 };
 
 export const getInitialState = (): AppState => {
-  // Try loading from localStorage
+  // Try loading from localStorage safely to prevent sandboxed iframe security crashes
   if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('smartspe_app_state');
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem('smartspe_app_state');
+      if (saved) {
         const parsed = JSON.parse(saved);
         
         // Force upgrade/sync vakrangee653@gmail.com super admin configuration
@@ -893,9 +893,9 @@ export const getInitialState = (): AppState => {
           parsed.expenses = [...INITIAL_EXPENSES];
         }
         return parsed;
-      } catch (e) {
-        console.error('Error parsing saved state, using default schema:', e);
       }
+    } catch (e) {
+      console.error('Error parsing saved state, using default schema:', e);
     }
   }
 
@@ -927,6 +927,10 @@ export const getInitialState = (): AppState => {
 
 export const saveState = (state: AppState) => {
   if (typeof window !== 'undefined') {
-    localStorage.setItem('smartspe_app_state', JSON.stringify(state));
+    try {
+      localStorage.setItem('smartspe_app_state', JSON.stringify(state));
+    } catch (e) {
+      console.warn('[Storage] Failed to save state to localStorage:', e);
+    }
   }
 };

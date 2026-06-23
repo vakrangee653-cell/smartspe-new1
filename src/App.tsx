@@ -34,6 +34,11 @@ import {
 } from 'lucide-react';
 import { formatINR } from './utils';
 
+export const metadata = {
+  title: "SmartSPE - CSC Management Software",
+  description: "CSC Management & Billing Software"
+};
+
 export default function App() {
   const [state, setState] = React.useState<AppState>(() => getInitialState());
   const [activeTab, setActiveTab] = React.useState('dashboard');
@@ -43,6 +48,11 @@ export default function App() {
   const [passcodeError, setPasscodeError] = React.useState('');
   const [liveTime, setLiveTime] = React.useState('');
   const [firebaseLoading, setFirebaseLoading] = React.useState(true);
+
+  // Set document title dynamically
+  React.useEffect(() => {
+    document.title = metadata.title;
+  }, []);
 
   // Pre-action triggers for navigation shortcuts
   const [activePreAction, setActivePreAction] = React.useState<string | null>(null);
