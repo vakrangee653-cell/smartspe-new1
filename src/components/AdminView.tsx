@@ -760,6 +760,56 @@ export default function AdminView({
     window.location.reload();
   };
 
+  // Clear all demo/dummy records to start fresh
+  const handleClearDemoData = () => {
+    if (!window.confirm("क्या आप वाकई सभी डेमो कस्टमर, ट्रांजेक्शन, ई-मित्रा और खर्चे के रिकॉर्ड हटाना चाहते हैं? (Are you sure you want to completely clear all demo/dummy customer, transaction, eMitra, and expense records?)")) return;
+    
+    const clearedState: AppState = {
+      ...state,
+      customers: [],
+      transactions: [],
+      emitraApplications: [],
+      offlineWork: [],
+      expenses: [],
+      securityLogs: [
+        {
+          id: `log-${String(Date.now()).slice(-5)}`,
+          timestamp: new Date().toISOString(),
+          operatorId: currentUser?.id || 'op-super',
+          operatorName: currentUser?.name || 'Vakrangee Super Admin',
+          role: currentUser?.role || 'Super Admin',
+          action: 'Wiped all demo/dummy customer registry entries, cash logs, eMitra entries, and expenses to establish a clean database',
+          status: 'Success',
+          ipAddress: '127.0.0.1',
+          device: 'System Portal',
+          browser: 'System Web'
+        },
+        ...state.securityLogs
+      ]
+    };
+    
+    if (window.confirm("क्या आप वॉलेट बैलेंस को भी शून्य (₹0) पर रीसेट करना चाहते हैं ताकि एकदम फ्रेश शुरुआत हो सके? (Would you also like to reset wallet balances to ₹0 to start completely fresh?)")) {
+      clearedState.wallet = {
+        balance: 0,
+        withdrawnCommission: 0,
+        totalCommissionEarned: 0,
+        lastUpdated: new Date().toISOString()
+      };
+      clearedState.aepsWallet = {
+        onlineBalance: 0,
+        physicalBalance: 0,
+        lastUpdated: new Date().toISOString()
+      };
+      clearedState.emitraWallet = {
+        balance: 0,
+        lastUpdated: new Date().toISOString()
+      };
+    }
+
+    onUpdateState(clearedState);
+    alert("✅ All demo entries cleared successfully! Your system is now 100% clean and ready for live operations.");
+  };
+
   return (
     <div className="space-y-6 animate-fade-in text-xs sm:text-sm">
       {/* View Header */}
@@ -1876,7 +1926,7 @@ export default function AdminView({
                 <p className="text-xs text-slate-400">Wipe data matrices, export complete state database files, or restore default setups</p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 
                 {/* Option 1: Backing up */}
                 <div className="p-4 rounded-2xl bg-blue-600/5 text-slate-800 dark:text-slate-200 border border-blue-500/15 space-y-3 flex flex-col justify-between">
@@ -1890,13 +1940,31 @@ export default function AdminView({
                   </div>
                   <button
                     onClick={handleBackupState}
-                    className="w-full py-2 bg-blue-650 bg-blue-600 text-white rounded-xl font-bold cursor-pointer hover:bg-blue-700 transition-colors"
+                    className="w-full py-2 bg-blue-600 text-white rounded-xl font-bold cursor-pointer hover:bg-blue-700 transition-colors"
                   >
                     Download State JSON
                   </button>
                 </div>
 
-                {/* Option 2: Factory wiping */}
+                {/* Option 2: Clear Demo Data */}
+                <div className="p-4 rounded-2xl bg-amber-600/5 text-slate-800 dark:text-slate-200 border border-amber-500/15 space-y-3 flex flex-col justify-between">
+                  <div>
+                    <h5 className="font-bold flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                      <Trash2 size={15} /> Clear All Demo Data
+                    </h5>
+                    <p className="text-xs text-slate-400 leading-normal mt-1.5">
+                      Recommended: Safely clear out all default demo transactions, dummy customer registers, applications, and expenses to prepare the system for live operations.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleClearDemoData}
+                    className="w-full py-2 bg-amber-600 text-white rounded-xl font-bold cursor-pointer hover:bg-amber-700 transition-colors"
+                  >
+                    Clear Demo Entries
+                  </button>
+                </div>
+
+                {/* Option 3: Factory wiping */}
                 <div className="p-4 rounded-2xl bg-rose-600/5 text-slate-800 dark:text-slate-200 border border-rose-500/15 space-y-3 flex flex-col justify-between">
                   <div>
                     <h5 className="font-bold flex items-center gap-1 text-rose-600 dark:text-rose-455">
