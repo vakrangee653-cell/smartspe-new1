@@ -145,7 +145,7 @@ export default function BankingView({
     } else if (type === 'DMT') {
       // Typically DMT has 1% charge
       fee = amt * 0.01;
-      commission = fee * (commissionSettings.dmtRate / 100) * 100; // direct rate from fee
+      commission = fee * (commissionSettings.dmtRate / 100); // dmtRate as percentage of the fee
     }
 
     return { 

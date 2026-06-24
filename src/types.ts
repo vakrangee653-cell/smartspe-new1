@@ -138,11 +138,12 @@ export interface EMitraWalletState {
 
 export interface Expense {
   id: string;
+  type?: 'Expense' | 'Income';
   description: string;
   category: string;
   amount: number;
   timestamp: string;
-  paymentMode: 'Cash (CSP Limit)' | 'SSO Wallet' | 'UPI/Bank' | 'Personal Cash';
+  paymentMode: 'Commission Wallet' | 'Cash (CSP Limit)' | 'SSO Wallet' | 'UPI/Bank' | 'Personal Cash';
   addedBy: string;
   notes?: string;
 }

@@ -103,7 +103,7 @@ const INITIAL_COMMISSION_SETTINGS: AppState['commissionSettings'] = {
   depositRate: 0.2, // 0.2%
   withdrawalRate: 0.5, // 0.5%
   transferRate: 15.0, // Fixed Rs 15 per transaction
-  dmtRate: 0.75, // 0.75%
+  dmtRate: 75.0, // 75% of the customer fee
   emitraRates: {
     'Jan Aadhaar Services': 45,
     'Birth Certificate': 35,
@@ -132,6 +132,7 @@ const INITIAL_COMMISSION_SETTINGS: AppState['commissionSettings'] = {
     'Aadhaar Print (आधार प्रिंट)': 50,
     'Form Filling (फॉर्म भरना)': 50,
     'File Print (फाइल प्रिंट)': 15,
+    'Recharge & Bill (रिचार्ज एवं बिल)': 100,
     'Other Offline Service (अन्य ऑफ़लाइन कार्य)': 40
   },
   offlineCosts: {
@@ -140,6 +141,7 @@ const INITIAL_COMMISSION_SETTINGS: AppState['commissionSettings'] = {
     'Aadhaar Print (आधार प्रिंट)': 10,
     'Form Filling (फॉर्म भरना)': 0,
     'File Print (फाइल प्रिंट)': 2,
+    'Recharge & Bill (रिचार्ज एवं बिल)': 98,
     'Other Offline Service (अन्य ऑफ़लाइन कार्य)': 5
   },
   customExpenseCategories: [
@@ -198,9 +200,13 @@ export const getInitialState = (): AppState => {
           }
           if (!parsed.commissionSettings.offlineFees) {
             parsed.commissionSettings.offlineFees = { ...INITIAL_COMMISSION_SETTINGS.offlineFees };
+          } else if (!parsed.commissionSettings.offlineFees['Recharge & Bill (रिचार्ज एवं बिल)']) {
+            parsed.commissionSettings.offlineFees['Recharge & Bill (रिचार्ज एवं बिल)'] = 100;
           }
           if (!parsed.commissionSettings.offlineCosts) {
             parsed.commissionSettings.offlineCosts = { ...INITIAL_COMMISSION_SETTINGS.offlineCosts };
+          } else if (!parsed.commissionSettings.offlineCosts['Recharge & Bill (रिचार्ज एवं बिल)']) {
+            parsed.commissionSettings.offlineCosts['Recharge & Bill (रिचार्ज एवं बिल)'] = 98;
           }
           if (!parsed.commissionSettings.customExpenseCategories) {
             parsed.commissionSettings.customExpenseCategories = [ ...INITIAL_COMMISSION_SETTINGS.customExpenseCategories! ];

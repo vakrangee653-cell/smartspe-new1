@@ -182,6 +182,18 @@ export default function EmitraView({
       lastUpdated: new Date().toISOString()
     };
 
+    // Calculate AEPS Wallet changes (Cash In Hand or Online UPI/Bank)
+    const updatedAepsWallet = {
+      ...state.aepsWallet,
+      physicalBalance: paymentMode === 'Cash'
+        ? state.aepsWallet.physicalBalance + amountCollected
+        : state.aepsWallet.physicalBalance,
+      onlineBalance: paymentMode === 'Online'
+        ? state.aepsWallet.onlineBalance + amountCollected
+        : state.aepsWallet.onlineBalance,
+      lastUpdated: new Date().toISOString()
+    };
+
     // If due amount is generated, record it directly on matching customer's ledger by phone lookup
     let updatedCusts = [...customers];
     if (dueAmount > 0) {
@@ -199,6 +211,7 @@ export default function EmitraView({
       emitraApplications: [newApp, ...emitraApplications],
       wallet: updatedWallet,
       emitraWallet: updatedEmitraWallet,
+      aepsWallet: updatedAepsWallet,
       customers: updatedCusts,
       securityLogs: [
         {

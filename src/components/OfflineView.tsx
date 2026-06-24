@@ -39,6 +39,7 @@ export const OFFLINE_SERVICES_FALLBACK = {
   'Aadhaar Print (आधार प्रिंट)': { label: 'Aadhaar Print (आधार प्रिंट)', defaultFee: 50, defaultCost: 10 },
   'Form Filling (फॉर्म भरना)': { label: 'Form Filling (फॉर्म भरना)', defaultFee: 50, defaultCost: 0 },
   'File Print (फाइल प्रिंट)': { label: 'File Print (फाइल प्रिंट)', defaultFee: 15, defaultCost: 2 },
+  'Recharge & Bill (रिचार्ज एवं बिल)': { label: 'Recharge & Bill (रिचार्ज एवं बिल)', defaultFee: 100, defaultCost: 98 },
   'Other Offline Service (अन्य ऑफ़लाइन कार्य)': { label: 'Other Offline Service (अन्य ऑफ़लाइन कार्य)', defaultFee: 40, defaultCost: 5 }
 };
 export type OfflineServiceType = string;
@@ -101,6 +102,11 @@ export default function OfflineView({
     setTotalCharged(defaultFee);
     setAmountCollected(defaultFee);
     setBaseCost(defaultCost);
+    if (selectedService === 'Recharge & Bill (रिचार्ज एवं बिल)') {
+      setIsDeductedFromWallet(true);
+    } else {
+      setIsDeductedFromWallet(false);
+    }
   }, [selectedService, commissionSettings.offlineFees, commissionSettings.offlineCosts]);
 
   // Auto trigger form if preset from dashboard
@@ -161,6 +167,18 @@ export default function OfflineView({
       lastUpdated: new Date().toISOString()
     };
 
+    // Calculate AEPS Wallet changes (Cash In Hand or Online UPI/Bank)
+    const updatedAepsWallet = {
+      ...state.aepsWallet,
+      physicalBalance: paymentMode === 'Cash'
+        ? state.aepsWallet.physicalBalance + amountCollected
+        : state.aepsWallet.physicalBalance,
+      onlineBalance: paymentMode === 'Online'
+        ? state.aepsWallet.onlineBalance + amountCollected
+        : state.aepsWallet.onlineBalance,
+      lastUpdated: new Date().toISOString()
+    };
+
     // If due exists, write back to customer due list by matching phone number
     let updatedCusts = [...customers];
     if (calculatedDue > 0) {
@@ -177,6 +195,7 @@ export default function OfflineView({
       ...state,
       offlineWork: [newOfflineItem, ...offlineWork],
       wallet: updatedWallet,
+      aepsWallet: updatedAepsWallet,
       customers: updatedCusts,
       securityLogs: [
         {
@@ -708,12 +727,19 @@ export default function OfflineView({
                     <input
                       type="checkbox"
                       checked={isDeductedFromWallet}
+                      disabled={selectedService === 'Recharge & Bill (रिचार्ज एवं बिल)'}
                       onChange={(e) => setIsDeductedFromWallet(e.target.checked)}
-                      className="w-4.5 h-4.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
+                      className="w-4.5 h-4.5 text-blue-600 border-slate-300 rounded focus:ring-blue-500 disabled:opacity-75"
                       id="deduct_offline_wallet_chk"
                     />
                     <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      Deduct base cost ({formatINR(baseCost)}) from branch wallet
+                      {selectedService === 'Recharge & Bill (रिचार्ज एवं बिल)' ? (
+                        <span className="text-blue-500 font-bold">
+                          Deduct recharge base cost ({formatINR(baseCost)}) automatically from CSP Wallet (इस सेवा के लिए वॉलेट से काटा जाएगा)
+                        </span>
+                      ) : (
+                        `Deduct base cost (${formatINR(baseCost)}) from branch wallet`
+                      )}
                     </span>
                   </label>
                 </div>
