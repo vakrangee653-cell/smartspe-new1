@@ -83,13 +83,26 @@ export const triggerPrint = (elementId: string) => {
   const printableElement = document.getElementById(elementId);
   if (!printableElement) return;
   
+  let shopName = 'SMARTSPE BANKING & EMITRA';
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem('smartspe_clean_state');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.shopDetails && parsed.shopDetails.name) {
+          shopName = parsed.shopDetails.name;
+        }
+      }
+    } catch (e) {}
+  }
+
   const printWindow = window.open('', '_blank');
   if (!printWindow) return;
   
   printWindow.document.write(`
     <html>
       <head>
-        <title>SmartSPE Report Printout</title>
+        <title>${shopName} Report Printout</title>
         <style>
           body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #333; }
           .header { text-align: center; border-bottom: 2px solid #1D4ED8; padding-bottom: 15px; margin-bottom: 25px; }
@@ -104,14 +117,14 @@ export const triggerPrint = (elementId: string) => {
       </head>
       <body>
         <div class="header">
-          <div class="title">SMARTSPE BANKING & EMITRA</div>
+          <div class="title">${shopName}</div>
           <div class="subtitle">Official Operational Activity Receipt / Report</div>
           <div style="font-size: 11px; color: #777; margin-top: 8px;">Generated at: ${new Date().toLocaleString()}</div>
         </div>
         ${printableElement.innerHTML}
         <div class="footer">
-          <p>This is a computer-generated transaction receipt from SmartSPE CSP SaaS Portal.</p>
-          <p>Thank you for banking with SmartSPE network.</p>
+          <p>This is a computer-generated transaction receipt from ${shopName} CSP SaaS Portal.</p>
+          <p>Thank you for banking with our network.</p>
         </div>
       </body>
     </html>

@@ -15,6 +15,7 @@ import SecurityView from './components/SecurityView';
 import AdminView from './components/AdminView';
 import ExpensesView from './components/ExpensesView';
 import LoginView from './components/LoginView';
+import UserProfileView from './components/UserProfileView';
 
 import { getInitialState, saveState } from './data';
 import { AppState, UserRole } from './types';
@@ -173,6 +174,49 @@ export default function App() {
     setActivePreAction(actionType);
   };
 
+  // Calculate today's total commission for the current logged-in user context
+  const todayCommission = React.useMemo(() => {
+    const currUser = state.currentUser;
+    if (!currUser) return 0;
+
+    const todayStr = '2026-06-21'; // matching simulated date in dashboard
+
+    // 1. Transactions commission
+    let txns = state.transactions;
+    if (currUser.role === 'Admin') {
+      txns = txns.filter(t => t.operatorId !== 'op-super');
+    } else if (currUser.role !== 'Super Admin') {
+      txns = txns.filter(t => t.operatorId === currUser.id);
+    }
+    const todayTxnsComm = txns
+      .filter(t => t.timestamp?.startsWith(todayStr) && t.status === 'Success')
+      .reduce((sum, t) => sum + t.commission, 0);
+
+    // 2. eMitra commission
+    let emitras = state.emitraApplications;
+    if (currUser.role === 'Admin') {
+      emitras = emitras.filter(a => a.operatorId !== 'op-super');
+    } else if (currUser.role !== 'Super Admin') {
+      emitras = emitras.filter(a => a.operatorId === currUser.id);
+    }
+    const todayEmitrasComm = emitras
+      .filter(a => a.appliedDate?.startsWith(todayStr))
+      .reduce((sum, a) => sum + a.commissionEarned, 0);
+
+    // 3. Offline work commission
+    let offworks = state.offlineWork;
+    if (currUser.role === 'Admin') {
+      offworks = offworks.filter(w => w.operatorId !== 'op-super');
+    } else if (currUser.role !== 'Super Admin') {
+      offworks = offworks.filter(w => w.operatorId === currUser.id);
+    }
+    const todayOfflineComm = offworks
+      .filter(w => w.receivedDate?.startsWith(todayStr))
+      .reduce((sum, w) => sum + (w.commissionEarned || 0), 0);
+
+    return todayTxnsComm + todayEmitrasComm + todayOfflineComm;
+  }, [state.transactions, state.emitraApplications, state.offlineWork, state.currentUser]);
+
   // Render view router based on selected menu tab
   const renderTabContent = () => {
     switch (activeTab) {
@@ -262,6 +306,14 @@ export default function App() {
         return (
           <AdminView 
             state={state} 
+            onUpdateState={handleUpdateState}
+            darkMode={darkMode}
+          />
+        );
+      case 'profile':
+        return (
+          <UserProfileView 
+            state={state}
             onUpdateState={handleUpdateState}
             darkMode={darkMode}
           />
@@ -393,6 +445,7 @@ export default function App() {
         currentUser={state.currentUser}
         walletBalance={state.wallet.balance}
         totalCommission={state.wallet.totalCommissionEarned}
+        todayCommission={todayCommission}
         onLogout={handleLogout}
       />
 
@@ -449,7 +502,10 @@ export default function App() {
             </div>
 
             {/* Quick Operator indicator widget */}
-            <div className="flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800">
+            <button 
+              onClick={() => setActiveTab('profile')}
+              className="flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-800 hover:opacity-80 transition-opacity text-left cursor-pointer"
+            >
               <div className="text-right">
                 <span className="font-bold block text-slate-900 dark:text-white leading-none">
                   {state.currentUser?.name}
@@ -458,7 +514,7 @@ export default function App() {
                   ID: {state.currentUser?.id.toUpperCase()}
                 </span>
               </div>
-            </div>
+            </button>
           </div>
         </header>
 

@@ -754,7 +754,7 @@ export default function AdminView({
     if (!window.confirm("CRITICAL WARNING: This action will restore your local database variables to original factory defaults, wiping custom customer registries, logs, and live wallet modifications. Continue?")) return;
     
     // Clear item
-    localStorage.removeItem('smartspe_app_state');
+    localStorage.removeItem('smartspe_clean_state');
     
     // Hard refresh page to trigger default seed inside data.ts
     window.location.reload();

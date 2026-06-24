@@ -183,8 +183,8 @@ export default function BankingView({
       return;
     }
 
-    if (!aadhaarNumber || aadhaarNumber.length < 12) {
-      alert("Please provide a valid 12-digit Aadhaar number.");
+    if (!aadhaarNumber) {
+      alert("Please provide an Aadhaar number.");
       return;
     }
 
@@ -220,6 +220,9 @@ export default function BankingView({
       aepsPhysicalDiff = -txnAmount; // physical cash handed over
     } else if (activeType === 'DMT' || activeType === 'Fund Transfer') {
       aepsOnlineDiff = -(txnAmount + fee); // digital debited sent amt + fee
+      if (activeType === 'DMT') {
+        aepsOnlineDiff += commission; // DMT commission added directly to banking's online cash balance
+      }
       aepsPhysicalDiff = txnAmount + fee; // physical cash collected from customer (amt + fee)
     }
 
@@ -299,23 +302,35 @@ export default function BankingView({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
+    const shopName = state.shopDetails?.name || 'Vakrangee Kendra (वाकरंगी केंद्र)';
+    const shopMobile = state.shopDetails?.mobile || '+91 90010 12345';
+    const shopGmail = state.shopDetails?.gmail || 'vakrangee653@gmail.com';
+    const shopAddress = state.shopDetails?.address || 'Rajasthan';
+    const shopLogo = state.shopDetails?.logoUrl || '';
+
     printWindow.document.write(`
       <html>
         <head>
           <title>Transaction Receipt - ${txn.id}</title>
           <style>
-            body { font-family: Courier, monospace; padding: 20px; font-size: 13px; color: #000; line-height: 1.4; max-width: 320px; margin: auto; }
+            body { font-family: 'Courier New', Courier, monospace; padding: 20px; font-size: 12px; color: #000; line-height: 1.4; max-width: 340px; margin: auto; }
             .line { border-bottom: 1px dashed #000; margin: 10px 0; }
             .center { text-align: center; }
             .bold { font-weight: bold; }
             .flex-row { display: flex; justify-content: space-between; }
-            .receipt-title { font-size: 16px; font-weight: bold; }
+            .receipt-title { font-size: 15px; font-weight: bold; margin-bottom: 2px; }
+            .sub-info { font-size: 10px; color: #333; margin-bottom: 1px; }
           </style>
         </head>
         <body>
-          <div class="center bold receipt-title">SMARTSPE PAYMENTS</div>
-          <div class="center">CSP + EMITRA SECURE AGENCY</div>
-          <div class="center">Ph: +91 98290 12345</div>
+          ${shopLogo ? `
+            <div class="center" style="margin-bottom: 8px;">
+              <img src="${shopLogo}" style="max-height: 55px; max-width: 140px; object-fit: contain;" />
+            </div>
+          ` : ''}
+          <div class="center bold receipt-title">${shopName}</div>
+          <div class="center sub-info">${shopAddress}</div>
+          <div class="center sub-info">Ph: ${shopMobile} | Gmail: ${shopGmail}</div>
           <div class="line"></div>
           <div class="flex-row"><span>Date:</span> <span>${new Date(txn.timestamp).toLocaleString()}</span></div>
           <div class="flex-row"><span>Txn Ref:</span> <span class="bold">${txn.id}</span></div>
@@ -333,12 +348,12 @@ export default function BankingView({
             <div class="flex-row"><span>IFSC Code:</span> <span>${txn.beneficiaryIFSC}</span></div>
           ` : ''}
           <div class="line"></div>
-          <div class="flex-row font-size: 17px; font-weight: bold;"><span>NET AMOUNT:</span> <span>${formatINR(txn.amount)}</span></div>
+          <div class="flex-row" style="font-size: 14px; font-weight: bold;"><span>NET AMOUNT:</span> <span>${formatINR(txn.amount)}</span></div>
           <div class="flex-row"><span>Fee/Charges:</span> <span>${formatINR(txn.fee)}</span></div>
           <div class="line"></div>
-          <div class="center bold" style="color: green;">TRANSACTION SUCCESSFUL</div>
+          <div class="center bold" style="color: green; font-size: 13px; letter-spacing: 1px;">TRANSACTION SUCCESSFUL</div>
           <div class="line"></div>
-          <div class="center">Thank you for banking with us.</div>
+          <div class="center" style="font-size: 10px; font-weight: bold;">Thank you for banking with us!</div>
         </body>
       </html>
     `);
@@ -486,10 +501,9 @@ export default function BankingView({
                   <input
                     type="text"
                     required
-                    maxLength={12}
                     value={aadhaarNumber}
                     onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, ''))}
-                    placeholder="12-digit Aadhaar Card Number"
+                    placeholder="Aadhaar Card Number / आधार नंबर"
                     className={`w-full px-3 py-2 rounded-xl text-xs sm:text-sm border outline-hidden font-mono transition-colors ${
                       darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-601'
                     }`}

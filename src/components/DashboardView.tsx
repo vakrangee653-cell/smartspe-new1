@@ -79,7 +79,7 @@ export default function DashboardView({
   const todayStr = '2026-06-21';
   
   // Filter for today
-  const todayTxns = transactions.filter(t => t.timestamp.startsWith(todayStr));
+  const todayTxns = transactions.filter(t => t.timestamp?.startsWith(todayStr));
   const successTodayTxns = todayTxns.filter(t => t.status === 'Success');
   const failedTodayTxns = todayTxns.filter(t => t.status === 'Failed');
   const pendingTodayTxns = todayTxns.filter(t => t.status === 'Pending');
@@ -89,6 +89,9 @@ export default function DashboardView({
   
   // Commission calculation
   const todayCommission = successTodayTxns.reduce((sum, t) => sum + t.commission, 0);
+  const todayEmitraComm = emitraApplications.filter(a => a.appliedDate?.startsWith(todayStr)).reduce((sum, a) => sum + a.commissionEarned, 0);
+  const todayOfflineComm = offlineWork.filter(w => w.receivedDate?.startsWith(todayStr)).reduce((sum, w) => sum + (w.commissionEarned || 0), 0);
+  const totalTodayCommission = todayCommission + todayEmitraComm + todayOfflineComm;
   
   // eMitra applications summary
   const pendingEmitraCount = emitraApplications.filter(app => app.status === 'Pending' || app.status === 'In Process').length;
@@ -108,11 +111,11 @@ export default function DashboardView({
       const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
       const compareStr = d.toISOString().split('T')[0];
       
-      const dayTxns = transactions.filter(t => t.timestamp.startsWith(compareStr) && t.status === 'Success');
+      const dayTxns = transactions.filter(t => t.timestamp?.startsWith(compareStr) && t.status === 'Success');
       const volume = dayTxns.reduce((sum, t) => sum + t.amount, 0);
       const comm = dayTxns.reduce((sum, t) => sum + t.commission, 0);
 
-      const dayEmitras = emitraApplications.filter(a => a.appliedDate.startsWith(compareStr));
+      const dayEmitras = emitraApplications.filter(a => a.appliedDate?.startsWith(compareStr));
       const emitraComm = dayEmitras.reduce((sum, a) => sum + a.commissionEarned, 0);
       
       days.push({
@@ -178,7 +181,7 @@ export default function DashboardView({
       </div>
 
       {/* Grid of Micro stats (Bento style) - Compact size as requested */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* Stat 1: CSP Cash Limit */}
         <div className={`p-3.5 rounded-2xl shadow-xs border transition-all duration-300 hover:scale-[1.01] flex flex-col justify-between ${
           darkMode ? 'bg-slate-900 text-white border-slate-800/80' : 'bg-white text-slate-900 border-slate-200/80'
@@ -203,6 +206,44 @@ export default function DashboardView({
           </div>
           <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Branch Capital Balance</span>
+          </div>
+        </div>
+
+        {/* Stat 1.5: Commission Wallet */}
+        <div className={`p-3.5 rounded-2xl shadow-xs border transition-all duration-300 hover:scale-[1.01] flex flex-col justify-between ${
+          darkMode ? 'bg-slate-900 text-white border-slate-800/80' : 'bg-white text-slate-900 border-slate-200/80'
+        }`}>
+          <div>
+            <div className="flex items-start justify-between">
+              <div className="p-2 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                <TrendingUp size={18} />
+              </div>
+              <span className="text-[9px] font-bold font-mono text-indigo-500 bg-indigo-500/10 px-1.5 py-0.5 rounded-md">
+                Real-time
+              </span>
+            </div>
+            <div className="mt-3">
+              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                Commission Wallet
+              </p>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">Total:</span>
+                  <span className="text-sm font-extrabold font-mono text-indigo-650 dark:text-indigo-400">
+                    {formatINR(wallet.totalCommissionEarned)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">Today:</span>
+                  <span className="text-xs font-extrabold font-mono text-emerald-600 dark:text-emerald-400">
+                    +{formatINR(totalTodayCommission)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+            <span>Total & Daily Commission</span>
           </div>
         </div>
 

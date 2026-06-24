@@ -63,7 +63,7 @@ export default function OfflineView({
   const { customers, currentUser, wallet, commissionSettings } = state;
 
   const [searchQuery, setSearchQuery] = React.useState('');
-  const [filterStatus, setFilterStatus] = React.useState<'All' | 'File Received' | 'Checking' | 'Processing' | 'Ready for Delivery' | 'Delivered'>('All');
+  const [filterStatus, setFilterStatus] = React.useState<'All' | 'File Received' | 'Checking' | 'Processing' | 'Ready for Delivery' | 'Delivered' | 'In Process' | 'Completed' | 'Uncompleted'>('All');
 
   // Form states
   const [isRegistering, setIsRegistering] = React.useState(true);
@@ -75,6 +75,8 @@ export default function OfflineView({
   }, [commissionSettings.offlineFees]);
 
   const [selectedService, setSelectedService] = React.useState<string>('Photocopy (फोटोकॉपी)');
+  const [initialStatus, setInitialStatus] = React.useState<OfflineWorkItem['status']>('File Received');
+  const [paymentMode, setPaymentMode] = React.useState<'Cash' | 'Online'>('Cash');
   const [workDesc, setWorkDesc] = React.useState('');
   const [docsReceivedStr, setDocsReceivedStr] = React.useState('');
   const [pendingStepsStr, setPendingStepsStr] = React.useState('');
@@ -139,7 +141,7 @@ export default function OfflineView({
       workDescription: workDesc,
       documentsReceived: docs,
       pendingSteps: steps,
-      status: 'File Received',
+      status: initialStatus,
       dueAmount: calculatedDue,
       operatorId: currentUser?.id || 'op-1',
       followUpDate: targetFollowup || undefined,
@@ -147,7 +149,8 @@ export default function OfflineView({
       totalCharged: totalCharged,
       baseCost: baseCost,
       commissionEarned: calculatedIncome,
-      amountCollected: amountCollected
+      amountCollected: amountCollected,
+      paymentMode: paymentMode
     };
 
     // Calculate wallet changes
@@ -198,6 +201,8 @@ export default function OfflineView({
     setGuestName('');
     setGuestPhone('');
     setWorkDesc('');
+    setInitialStatus('File Received');
+    setPaymentMode('Cash');
      setDocsReceivedStr('');
      setPendingStepsStr('');
     setTargetFollowup('');
@@ -346,8 +351,11 @@ export default function OfflineView({
                 <option value="File Received">File Received</option>
                 <option value="Checking">Checking</option>
                 <option value="Processing">Processing</option>
+                <option value="In Process">In Process (Procece)</option>
                 <option value="Ready for Delivery">Ready for Delivery</option>
                 <option value="Delivered">Delivered</option>
+                <option value="Completed">Completed (Complit)</option>
+                <option value="Uncompleted">Uncompleted (Uncomplit)</option>
               </select>
             </div>
 
@@ -393,18 +401,25 @@ export default function OfflineView({
                           value={item.status}
                           onChange={(e: any) => handleUpdateDeliveryStatus(item.id, e.target.value)}
                           className={`p-1 rounded-md text-[10px] font-bold border outline-hidden ${
-                            item.status === 'Delivered' 
+                            item.status === 'Delivered' || item.status === 'Completed'
                               ? 'bg-emerald-500/15 text-emerald-500 border-emerald-500/20' 
                               : item.status === 'Ready for Delivery'
                                 ? 'bg-blue-600 text-white border-blue-500'
-                                : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                : item.status === 'In Process' || item.status === 'Processing'
+                                  ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                                  : item.status === 'Uncompleted'
+                                    ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                                    : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
                           }`}
                         >
                           <option value="File Received">File Received</option>
                           <option value="Checking">Checking</option>
                           <option value="Processing">Processing</option>
+                          <option value="In Process">In Process (Procece)</option>
                           <option value="Ready for Delivery">Ready for Delivery</option>
                           <option value="Delivered">Delivered</option>
+                          <option value="Completed">Completed (Complit)</option>
+                          <option value="Uncompleted">Uncompleted (Uncomplit)</option>
                         </select>
                       </div>
                     </div>
@@ -471,6 +486,16 @@ export default function OfflineView({
                         <span className="text-slate-400">Amt Paid:</span>
                         <span className="font-mono text-blue-500 font-semibold">
                           {item.amountCollected !== undefined ? formatINR(item.amountCollected) : formatINR((item.totalCharged || 0) - (item.dueAmount || 0))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-[10px]">
+                        <span className="text-slate-400">Mode:</span>
+                        <span className={`px-1 rounded text-[9px] font-bold ${
+                          item.paymentMode === 'Online'
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                        }`}>
+                          {item.paymentMode || 'Cash'}
                         </span>
                       </div>
                     </div>
@@ -545,20 +570,41 @@ export default function OfflineView({
                   </div>
                 </div>
 
-                {/* Service type Selection */}
-                <div>
-                  <label className="text-xs font-semibold text-slate-400 block mb-1">Select Offline Service *</label>
-                  <select
-                    value={selectedService}
-                    onChange={(e) => setSelectedService(e.target.value as OfflineServiceType)}
-                    className={`w-full px-3 py-2 rounded-xl text-xs border outline-hidden transition-colors ${
-                      darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
-                    }`}
-                  >
-                    {OFFLINE_SERVICES_LIST.map(serviceName => (
-                      <option key={serviceName} value={serviceName}>{serviceName}</option>
-                    ))}
-                  </select>
+                {/* Service type & Status Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1">Select Offline Service *</label>
+                    <select
+                      value={selectedService}
+                      onChange={(e) => setSelectedService(e.target.value as OfflineServiceType)}
+                      className={`w-full px-3 py-2 rounded-xl text-xs border outline-hidden transition-colors ${
+                        darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
+                      }`}
+                    >
+                      {OFFLINE_SERVICES_LIST.map(serviceName => (
+                        <option key={serviceName} value={serviceName}>{serviceName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1">Work Status *</label>
+                    <select
+                      value={initialStatus}
+                      onChange={(e: any) => setInitialStatus(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-xl text-xs border outline-hidden transition-colors ${
+                        darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
+                      }`}
+                    >
+                      <option value="File Received">File Received</option>
+                      <option value="Checking">Checking</option>
+                      <option value="Processing">Processing</option>
+                      <option value="In Process">In Process (Procece)</option>
+                      <option value="Ready for Delivery">Ready for Delivery</option>
+                      <option value="Delivered">Delivered</option>
+                      <option value="Completed">Completed (Complit)</option>
+                      <option value="Uncompleted">Uncompleted (Uncomplit)</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Task Work Description */}
@@ -579,7 +625,7 @@ export default function OfflineView({
 
 
                 {/* Bill Inputs Row */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   <div>
                     <label className="text-xs font-semibold text-slate-400 block mb-1">Total Bill Charged to Customer (₹) *</label>
                     <input
@@ -611,6 +657,19 @@ export default function OfflineView({
                         darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
                       }`}
                     />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-slate-400 block mb-1">Payment Mode / भुगतान का माध्यम *</label>
+                    <select
+                      value={paymentMode}
+                      onChange={(e: any) => setPaymentMode(e.target.value)}
+                      className={`w-full px-3 py-2 rounded-xl border outline-hidden font-semibold transition-colors ${
+                        darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
+                      }`}
+                    >
+                      <option value="Cash">Cash (कैश)</option>
+                      <option value="Online">Online (ऑनलाइन UPI/Bank)</option>
+                    </select>
                   </div>
                 </div>
 

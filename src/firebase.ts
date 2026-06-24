@@ -71,11 +71,59 @@ try {
 
 export const db = tempDb;
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth?.currentUser?.uid,
+      email: auth?.currentUser?.email,
+      emailVerified: auth?.currentUser?.emailVerified,
+      isAnonymous: auth?.currentUser?.isAnonymous,
+      tenantId: auth?.currentUser?.tenantId,
+      providerInfo: auth?.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 /**
  * Saves the given application state to Firestore for a specific user ID.
  */
 export async function saveStateToFirestore(userId: string, state: any) {
   if (!userId) return;
+  const path = `user_states/${userId}`;
   try {
     const docRef = doc(db, 'user_states', userId);
     
@@ -87,7 +135,7 @@ export async function saveStateToFirestore(userId: string, state: any) {
     await setDoc(docRef, cleanState);
     console.log(`[Firebase] AppState synced for user ${userId}`);
   } catch (err) {
-    console.error('[Firebase] Failed to save state to Firestore:', err);
+    handleFirestoreError(err, OperationType.WRITE, path);
   }
 }
 
@@ -96,6 +144,7 @@ export async function saveStateToFirestore(userId: string, state: any) {
  */
 export async function getStateFromFirestore(userId: string): Promise<any | null> {
   if (!userId) return null;
+  const path = `user_states/${userId}`;
   try {
     const docRef = doc(db, 'user_states', userId);
     const docSnap = await getDoc(docRef);
@@ -103,7 +152,7 @@ export async function getStateFromFirestore(userId: string): Promise<any | null>
       return docSnap.data();
     }
   } catch (err) {
-    console.error('[Firebase] Failed to fetch state from Firestore:', err);
+    handleFirestoreError(err, OperationType.GET, path);
   }
   return null;
 }

@@ -20,6 +20,7 @@ import {
   TrendingUp,
   Fingerprint,
   Receipt,
+  User,
   LogOut
 } from 'lucide-react';
 import { UserRole } from '../types';
@@ -34,6 +35,7 @@ interface SidebarProps {
   currentUser: { id: string; name: string; role: UserRole; email: string } | null;
   walletBalance: number;
   totalCommission: number;
+  todayCommission?: number;
   onLogout: () => void;
 }
 
@@ -45,6 +47,7 @@ export default function Sidebar({
   currentUser,
   walletBalance,
   totalCommission,
+  todayCommission,
   onLogout
 }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -57,6 +60,7 @@ export default function Sidebar({
     { id: 'emitra', label: 'eMitra Services', icon: Layers },
     { id: 'offline', label: 'Offline Work', icon: ClipboardList },
     { id: 'expenses', label: 'Expenses Tracker', icon: Receipt },
+    { id: 'profile', label: 'User Profile (यूज़र प्रोफ़ाइल)', icon: User },
     ...(currentUser?.role === 'Super Admin' || currentUser?.role === 'Admin'
       ? [
           { id: 'reports', label: 'Reports & Analytics', icon: FileText },
@@ -181,12 +185,15 @@ export default function Sidebar({
 
         {/* Sidebar Footer Block */}
         <div className="p-5 border-t border-blue-100 dark:border-slate-850 bg-[#DFEEFC] dark:bg-[#0B111E] space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center font-display font-bold text-white shadow-md">
+          <button 
+            onClick={() => handleNav('profile')}
+            className="w-full flex items-center gap-3 text-left hover:bg-blue-600/5 p-1 rounded-xl transition-colors cursor-pointer group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center font-display font-bold text-white shadow-md group-hover:scale-105 transition-transform">
               {currentUser?.name.charAt(0) || 'A'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold truncate leading-tight text-slate-900 dark:text-white">
+              <p className="text-xs font-bold truncate leading-tight text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
                 {currentUser?.name || 'User'}
               </p>
               <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -196,6 +203,23 @@ export default function Sidebar({
                 <span className="text-[9px] font-mono font-semibold text-slate-500 dark:text-slate-400 truncate max-w-[80px]">
                   ID: {currentUser?.id.toUpperCase()}
                 </span>
+              </div>
+            </div>
+          </button>
+
+          {/* Dual Wallet Display (CSP Cash Limit and Commission Wallet) */}
+          <div className="grid grid-cols-2 gap-2 mt-2 pt-2.5 border-t border-blue-200/50 dark:border-slate-800">
+            <div className="p-2 rounded-xl bg-blue-600/5 dark:bg-slate-900 border border-blue-500/10 text-left flex flex-col justify-center">
+              <span className="text-[8px] text-slate-500 dark:text-slate-400 block font-bold leading-tight uppercase tracking-wider mb-0.5">CSP Cash Limit</span>
+              <span className="text-xs font-mono font-extrabold text-blue-600 dark:text-blue-400">{formatINR(walletBalance)}</span>
+            </div>
+            <div className="p-2 rounded-xl bg-emerald-600/5 dark:bg-slate-900 border border-emerald-500/10 text-left flex flex-col justify-center">
+              <span className="text-[8px] text-slate-500 dark:text-slate-400 block font-bold leading-tight uppercase tracking-wider mb-0.5">Commission</span>
+              <div className="text-[9px] leading-tight font-medium text-slate-550 dark:text-slate-400">
+                <div>Total: <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{formatINR(totalCommission)}</span></div>
+                {todayCommission !== undefined && (
+                  <div>Today: <span className="font-mono font-bold text-teal-600 dark:text-teal-400">+{formatINR(todayCommission)}</span></div>
+                )}
               </div>
             </div>
           </div>

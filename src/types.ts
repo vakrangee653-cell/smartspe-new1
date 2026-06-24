@@ -74,12 +74,13 @@ export interface EmitraApplication {
   appliedDate: string;
   feeCharged: number;
   commissionEarned: number;
-  status: 'Pending' | 'Submitted' | 'In Process' | 'Completed' | 'Rejected';
+  status: 'Pending' | 'Submitted' | 'In Process' | 'Completed' | 'Uncompleted' | 'Rejected';
   tokenNumber: string;
   dueAmount: number;
   operatorId: string;
   notes?: string;
   documentsSubmitted: string[];
+  paymentMode?: 'Cash' | 'Online';
 }
 
 export interface OfflineWorkItem {
@@ -90,7 +91,7 @@ export interface OfflineWorkItem {
   workDescription: string;
   documentsReceived: string[];
   pendingSteps: string[];
-  status: 'File Received' | 'Checking' | 'Processing' | 'Ready for Delivery' | 'Delivered';
+  status: 'File Received' | 'Checking' | 'Processing' | 'Ready for Delivery' | 'Delivered' | 'In Process' | 'Completed' | 'Uncompleted';
   dueAmount: number;
   deliveryDate?: string;
   followUpDate?: string;
@@ -101,6 +102,7 @@ export interface OfflineWorkItem {
   baseCost?: number;
   commissionEarned?: number;
   amountCollected?: number;
+  paymentMode?: 'Cash' | 'Online';
 }
 
 export interface SecurityLog {
@@ -145,6 +147,14 @@ export interface Expense {
   notes?: string;
 }
 
+export interface ShopDetails {
+  name: string;
+  mobile: string;
+  gmail: string;
+  address: string;
+  logoUrl?: string; // Base64 or URL of the shop logo
+}
+
 export interface AppState {
   currentUser: {
     id: string;
@@ -153,6 +163,7 @@ export interface AppState {
     role: UserRole;
     phoneNumber: string;
   } | null;
+  shopDetails?: ShopDetails;
   wallet: WalletState;
   aepsWallet: AEPSWalletState;
   emitraWallet: EMitraWalletState;

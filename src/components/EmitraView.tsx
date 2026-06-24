@@ -59,7 +59,7 @@ export default function EmitraView({
 
   const [searchQuery, setSearchQuery] = React.useState('');
   const [filterType, setFilterType] = React.useState<'All' | EmitraServiceType>('All');
-  const [filterStatus, setFilterStatus] = React.useState<'All' | 'Pending' | 'Submitted' | 'In Process' | 'Completed' | 'Rejected'>('All');
+  const [filterStatus, setFilterStatus] = React.useState<'All' | 'Pending' | 'Submitted' | 'In Process' | 'Completed' | 'Uncompleted' | 'Rejected'>('All');
 
   // Form trigger - default to true for instant fast entry
   const [isApplying, setIsApplying] = React.useState(true);
@@ -68,6 +68,8 @@ export default function EmitraView({
   const [guestName, setGuestName] = React.useState('');
   const [guestPhone, setGuestPhone] = React.useState('');
   const [selectedService, setSelectedService] = React.useState<EmitraServiceType>('Jan Aadhaar Services');
+  const [initialStatus, setInitialStatus] = React.useState<EmitraApplication['status']>('Submitted');
+  const [paymentMode, setPaymentMode] = React.useState<'Cash' | 'Online'>('Cash');
   const [applNotes, setApplNotes] = React.useState('');
   const [totalCharged, setTotalCharged] = React.useState<number>(155);
   const [amountCollected, setAmountCollected] = React.useState<number>(155);
@@ -157,12 +159,13 @@ export default function EmitraView({
       appliedDate: new Date().toISOString(),
       feeCharged: totalCharged, // The total amount taken from customer
       commissionEarned: calculatedIncome, // Remainder seh rashi added to income
-      status: 'Submitted',
+      status: initialStatus,
       tokenNumber: newToken,
       dueAmount: dueAmount,
       operatorId: currentUser?.id || 'op-1',
       notes: applNotes || undefined,
-      documentsSubmitted: priceDetails.listDocs
+      documentsSubmitted: priceDetails.listDocs,
+      paymentMode: paymentMode
     };
 
     // Calculate wallet adjustments
@@ -220,6 +223,8 @@ export default function EmitraView({
     setGuestName('');
     setGuestPhone('');
     setApplNotes('');
+    setInitialStatus('Submitted');
+    setPaymentMode('Cash');
     const defaultJanAadhaarTotal = SERVICE_FEES['Jan Aadhaar Services'].fee + (commissionSettings.emitraRates['Jan Aadhaar Services'] || 35);
     setTotalCharged(defaultJanAadhaarTotal);
     setAmountCollected(defaultJanAadhaarTotal);
@@ -245,22 +250,35 @@ export default function EmitraView({
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
     
+    const shopName = state.shopDetails?.name || 'Vakrangee Kendra (वाकरंगी केंद्र)';
+    const shopMobile = state.shopDetails?.mobile || '+91 90010 12345';
+    const shopGmail = state.shopDetails?.gmail || 'vakrangee653@gmail.com';
+    const shopAddress = state.shopDetails?.address || 'Rajasthan';
+    const shopLogo = state.shopDetails?.logoUrl || '';
+
     printWindow.document.write(`
       <html>
         <head>
           <title>eMitra Token - ${app.tokenNumber}</title>
           <style>
             body { font-family: sans-serif; padding: 25px; line-height: 1.5; color: #1e293b; max-width: 400px; margin: auto; border: 1px solid #e2e8f0; border-radius: 16px; }
-            .header { text-align: center; border-bottom: 2px solid #1D4ED8; padding-bottom: 15px; }
+            .header { text-align: center; border-bottom: 2px solid #1D4ED8; padding-bottom: 12px; }
             .token-box { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; text-align: center; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 12px; margin: 15px 0; }
             .row { display: flex; justify-content: space-between; font-size: 13px; margin: 6px 0; }
             .bold { font-weight: bold; }
+            .sub-info { font-size: 10px; color: #64748b; margin-top: 2px; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h2 style="margin: 0; color: #1D4ED8; font-size: 20px;">SMARTSPE eMitra</h2>
-            <div style="font-size: 11px; color: #64748b;">Rajasthan Single Sign-On (SSO) Agent</div>
+            ${shopLogo ? `
+              <div style="margin-bottom: 8px;">
+                <img src="${shopLogo}" style="max-height: 55px; max-width: 140px; object-fit: contain;" />
+              </div>
+            ` : ''}
+            <h2 style="margin: 0; color: #1D4ED8; font-size: 18px;">${shopName}</h2>
+            <div class="sub-info">${shopAddress}</div>
+            <div class="sub-info">Ph: ${shopMobile} | Gmail: ${shopGmail}</div>
           </div>
           <div class="token-box">
             TOKEN: ${app.tokenNumber}
@@ -270,6 +288,7 @@ export default function EmitraView({
           <div class="row"><span>Service Type:</span> <span class="bold">${app.serviceType}</span></div>
           <div class="row"><span>Appl Date:</span> <span>${formatDateNice(app.appliedDate)}</span></div>
           <div class="row"><span>Progress:</span> <span class="bold" style="color: blue;">${app.status}</span></div>
+          <div class="row"><span>Payment Mode / भुगतान:</span> <span class="bold" style="color: #16a34a;">${app.paymentMode || 'Cash'}</span></div>
           <div class="row"><span>Government Fee:</span> <span>${formatINR(app.feeCharged)}</span></div>
           ${app.dueAmount > 0 ? `<div class="row" style="color: orange;"><span>Uncollected Due:</span> <span class="bold">${formatINR(app.dueAmount)}</span></div>` : ''}
           <hr style="border: none; border-top: 1px dashed #cbd5e1;" />
@@ -366,7 +385,7 @@ export default function EmitraView({
           <form onSubmit={handleCreateApplication} className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-xs">
             {/* Left inputs column (spans 2 on desktop) */}
             <div className="lg:col-span-2 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* Applicant Name */}
                 <div>
                   <label className="text-xs font-semibold text-slate-400 block mb-1">Customer / Applicant Name *</label>
@@ -413,9 +432,28 @@ export default function EmitraView({
                     ))}
                   </select>
                 </div>
+
+                {/* Initial Status */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1">Application Status</label>
+                  <select
+                    value={initialStatus}
+                    onChange={(e: any) => setInitialStatus(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl border outline-hidden transition-colors ${
+                      darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
+                    }`}
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Submitted">Submitted</option>
+                    <option value="In Process">In Process (Procece)</option>
+                    <option value="Completed">Completed (Complit)</option>
+                    <option value="Uncompleted">Uncompleted (Uncomplit)</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* Total Customer Amount */}
                 <div>
                   <label className="text-xs font-semibold text-slate-400 block mb-1">Total Bill Charged to Customer (₹) *</label>
@@ -450,6 +488,21 @@ export default function EmitraView({
                       darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
                     }`}
                   />
+                </div>
+
+                {/* Payment Mode */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-400 block mb-1">Payment Mode / भुगतान का माध्यम *</label>
+                  <select
+                    value={paymentMode}
+                    onChange={(e: any) => setPaymentMode(e.target.value)}
+                    className={`w-full px-3 py-2 rounded-xl border outline-hidden font-semibold transition-colors ${
+                      darkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border-slate-300 focus:border-blue-600'
+                    }`}
+                  >
+                    <option value="Cash">Cash (कैश)</option>
+                    <option value="Online">Online (ऑनलाइन UPI/Bank)</option>
+                  </select>
                 </div>
 
                 {/* Application Notes */}
@@ -601,8 +654,9 @@ export default function EmitraView({
               <option value="All">All Statuses</option>
               <option value="Pending">Pending</option>
               <option value="Submitted">Submitted</option>
-              <option value="In Process">In Process</option>
-              <option value="Completed">Completed</option>
+              <option value="In Process">In Process (Procece)</option>
+              <option value="Completed">Completed (Complit)</option>
+              <option value="Uncompleted">Uncompleted (Uncomplit)</option>
               <option value="Rejected">Rejected</option>
             </select>
           </div>
@@ -652,9 +706,11 @@ export default function EmitraView({
                           ? 'bg-emerald-500/15 text-emerald-500'
                           : app.status === 'In Process'
                             ? 'bg-blue-500/15 text-blue-500 animate-pulse'
-                            : app.status === 'Rejected'
+                            : app.status === 'Uncompleted'
                               ? 'bg-rose-500/15 text-rose-500'
-                              : 'bg-amber-500/15 text-amber-500'
+                              : app.status === 'Rejected'
+                                ? 'bg-rose-500/15 text-rose-500'
+                                : 'bg-amber-500/15 text-amber-500'
                       }`}>
                         {app.status}
                       </span>
@@ -669,8 +725,9 @@ export default function EmitraView({
                       >
                         <option value="Pending">Pending</option>
                         <option value="Submitted">Submitted</option>
-                        <option value="In Process">In Process</option>
-                        <option value="Completed">Completed</option>
+                        <option value="In Process">In Process (Procece)</option>
+                        <option value="Completed">Completed (Complit)</option>
+                        <option value="Uncompleted">Uncompleted (Uncomplit)</option>
                         <option value="Rejected">Rejected</option>
                       </select>
                     </div>
@@ -678,6 +735,13 @@ export default function EmitraView({
                   <td className="py-3.5 px-3 text-right">
                     <div className="space-y-0.5 font-mono">
                       <span className="font-bold block">{formatINR(app.feeCharged)}</span>
+                      <span className={`inline-block text-[9px] px-1 py-0.5 rounded font-bold ${
+                        app.paymentMode === 'Online'
+                          ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                          : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                      }`}>
+                        {app.paymentMode || 'Cash'}
+                      </span>
                       {app.dueAmount > 0 && (
                         <span className="text-[10px] text-amber-500 font-bold block">
                           Due: {formatINR(app.dueAmount)}
