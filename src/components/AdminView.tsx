@@ -57,7 +57,7 @@ export default function AdminView({
   const [opPhone, setOpPhone] = React.useState('');
   const [opRole, setOpRole] = React.useState<'Admin' | 'Operator'>('Operator');
   const [opLimit, setOpLimit] = React.useState(100000);
-  const [opCommRate, setOpCommRate] = React.useState(60);
+  const [opCommRate, setOpCommRate] = React.useState(100);
   const [opPassword, setOpPassword] = React.useState('operator123');
 
   // Password resetting states
@@ -981,7 +981,7 @@ export default function AdminView({
                       }`}
                     />
                   </div>
-                  <div>
+                  <div className="col-span-1 sm:col-span-2">
                     <label className="text-[10px] font-semibold text-slate-400 block mb-1">Max Cash Limit *</label>
                     <input
                       type="number"
@@ -989,20 +989,6 @@ export default function AdminView({
                       value={opLimit}
                       onChange={(e) => setOpLimit(Number(e.target.value))}
                       className={`w-full px-2.5 py-1.5 rounded-lg border outline-hidden font-mono font-bold ${
-                        darkMode ? 'bg-slate-900 text-white border-slate-800' : 'bg-white border-slate-300'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] font-semibold text-slate-400 block mb-1">Commission Share (60-90%) *</label>
-                    <input
-                      type="number"
-                      required
-                      min={60}
-                      max={90}
-                      value={opCommRate}
-                      onChange={(e) => setOpCommRate(Number(e.target.value))}
-                      className={`w-full px-2.5 py-1.5 rounded-lg border outline-hidden font-mono ${
                         darkMode ? 'bg-slate-900 text-white border-slate-800' : 'bg-white border-slate-300'
                       }`}
                     />
@@ -1075,13 +1061,9 @@ export default function AdminView({
                           <span className="text-[9px] text-slate-400 block leading-none">Contact</span>
                           <span className="font-mono text-slate-900 dark:text-white">{op.phoneNumber}</span>
                         </div>
-                        <div>
-                          <span className="text-[9px] text-slate-400 block leading-none">Cash Limit</span>
+                        <div className="col-span-2 border-t border-slate-100 dark:border-slate-800 pt-1">
+                          <span className="text-[9px] text-slate-400 block leading-none">CSP Cash Limit</span>
                           <span className="font-bold text-slate-900 dark:text-white">{formatINR(op.walletLimit)}</span>
-                        </div>
-                        <div>
-                          <span className="text-[9px] text-slate-400 block leading-none">Yield rate</span>
-                          <span className="font-bold text-emerald-500">{op.commissionRate}% Share</span>
                         </div>
                       </div>
 
@@ -1144,41 +1126,26 @@ export default function AdminView({
                         </div>
                       ) : editingOpId === op.id ? (
                         <div className="mt-2 p-3 bg-amber-500/5 dark:bg-amber-500/10 rounded-xl space-y-3 border border-amber-500/20">
-                          <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold uppercase tracking-wider">⚙️ Edit Operator Cash Limit & Commission (सीमा और कमीशन सेट करें)</span>
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 block font-bold uppercase tracking-wider">⚙️ Edit Operator Cash Limit (सीमा सेट करें)</span>
                           
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                              <label className="text-[9px] text-slate-400 block mb-1">CSP Cash Limit (₹)</label>
-                              <input
-                                type="number"
-                                value={editLimitVal}
-                                onChange={(e) => setEditLimitVal(Number(e.target.value))}
-                                className={`w-full px-2 py-1 rounded-md text-[11px] font-mono font-bold border outline-hidden ${
-                                  darkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-300'
-                                }`}
-                              />
-                            </div>
-                            <div>
-                              <label className="text-[9px] text-slate-400 block mb-1">Yield Share (60-90%)</label>
-                              <input
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={editCommVal}
-                                onChange={(e) => setEditCommVal(Number(e.target.value))}
-                                className={`w-full px-2 py-1 rounded-md text-[11px] font-mono font-bold border outline-hidden ${
-                                  darkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-300'
-                                }`}
-                              />
-                            </div>
+                          <div className="text-xs">
+                            <label className="text-[9px] text-slate-400 block mb-1 font-semibold uppercase tracking-wider">CSP Cash Limit (₹)</label>
+                            <input
+                              type="number"
+                              value={editLimitVal}
+                              onChange={(e) => setEditLimitVal(Number(e.target.value))}
+                              className={`w-full px-2 py-1 rounded-md text-[11px] font-mono font-bold border outline-hidden ${
+                                darkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-300'
+                              }`}
+                            />
                           </div>
 
                           <div className="flex gap-1.5 justify-end">
                             <button
-                              onClick={() => handleUpdateOpSettings(op.id, editLimitVal, editCommVal)}
+                              onClick={() => handleUpdateOpSettings(op.id, editLimitVal, op.commissionRate)}
                               className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold rounded-md cursor-pointer"
                             >
-                              Save Limit & Share
+                              Save Limit (सीमा सहेजें)
                             </button>
                             <button
                               onClick={() => setEditingOpId(null)}
