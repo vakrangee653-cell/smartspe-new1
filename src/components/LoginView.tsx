@@ -233,7 +233,37 @@ export default function LoginView({
       return;
     }
 
-    // Login Successful! Intercept to trigger secure Gmail OTP Verification
+    // Direct Login for Operator role
+    if (operatorMatched.role === 'Operator') {
+      const successLog: SecurityLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        operatorId: operatorMatched.id,
+        operatorName: operatorMatched.name,
+        role: operatorMatched.role,
+        action: `Direct Operator Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'}`,
+        status: 'Success',
+        ipAddress: browserDetails.ip,
+        device: browserDetails.device,
+        browser: browserDetails.browser
+      };
+
+      onUpdateState({
+        ...state,
+        currentUser: {
+          id: operatorMatched.id,
+          name: `${operatorMatched.name} (${operatorMatched.role})`,
+          email: operatorMatched.email,
+          role: operatorMatched.role,
+          phoneNumber: operatorMatched.phoneNumber
+        },
+        securityLogs: [successLog, ...state.securityLogs]
+      });
+      setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Operator Login)`);
+      return;
+    }
+
+    // Login Successful for Admins / Super Admins! Intercept to trigger secure Gmail OTP Verification
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setSessionOtp(code);
     setActiveOtpFlow('login_otp');
