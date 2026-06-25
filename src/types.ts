@@ -17,6 +17,7 @@ export interface Operator {
   password?: string;
   failedAttempts?: number;
   isLockedOut?: boolean;
+  createdBy?: string;
 }
 
 export interface Customer {
@@ -39,6 +40,7 @@ export interface Customer {
   createdAt: string;
   followUpDate?: string;
   followUpNotes?: string;
+  createdBy?: string;
 }
 
 export type TransactionType = 'Deposit' | 'Withdrawal' | 'Fund Transfer' | 'DMT';
@@ -62,6 +64,7 @@ export interface Transaction {
   bankName?: string;
   utrNumber: string;
   walletDebited: boolean;
+  createdBy?: string;
 }
 
 export type EmitraServiceType = string;
@@ -81,6 +84,7 @@ export interface EmitraApplication {
   notes?: string;
   documentsSubmitted: string[];
   paymentMode?: 'Cash' | 'Online';
+  createdBy?: string;
 }
 
 export interface OfflineWorkItem {
@@ -103,6 +107,7 @@ export interface OfflineWorkItem {
   commissionEarned?: number;
   amountCollected?: number;
   paymentMode?: 'Cash' | 'Online';
+  createdBy?: string;
 }
 
 export interface SecurityLog {
@@ -116,6 +121,7 @@ export interface SecurityLog {
   ipAddress: string;
   device: string;
   browser: string;
+  createdBy?: string;
 }
 
 export interface WalletState {
@@ -146,6 +152,7 @@ export interface Expense {
   paymentMode: 'Commission Wallet' | 'Cash (CSP Limit)' | 'SSO Wallet' | 'UPI/Bank' | 'Personal Cash';
   addedBy: string;
   notes?: string;
+  createdBy?: string;
 }
 
 export interface ShopDetails {

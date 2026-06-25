@@ -57,9 +57,12 @@ export default function OfflineView({
   const offlineWork = React.useMemo(() => {
     if (!currUser) return state.offlineWork;
     if (currUser.role === 'Super Admin') return state.offlineWork;
-    if (currUser.role === 'Admin') return state.offlineWork.filter(w => w.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.offlineWork.filter(w => w.createdBy === currUser.id || w.operatorId === currUser.id || myOpIds.includes(w.operatorId));
+    }
     return state.offlineWork.filter(w => w.operatorId === currUser.id);
-  }, [state.offlineWork, currUser]);
+  }, [state.offlineWork, state.operators, currUser]);
 
   const { customers, currentUser, wallet, commissionSettings } = state;
 
@@ -139,6 +142,10 @@ export default function OfflineView({
     const docs = docsReceivedStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
     const steps = pendingStepsStr.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
+    const branchAdminId = currentUser?.role === 'Admin' 
+      ? currentUser.id 
+      : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
     const newOfflineItem: OfflineWorkItem = {
       id: `OFF-${Math.floor(1000 + Math.random() * 8999)}`,
       receivedDate: new Date().toISOString(),
@@ -156,7 +163,8 @@ export default function OfflineView({
       baseCost: baseCost,
       commissionEarned: calculatedIncome,
       amountCollected: amountCollected,
-      paymentMode: paymentMode
+      paymentMode: paymentMode,
+      createdBy: branchAdminId
     };
 
     // Calculate wallet changes

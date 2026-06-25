@@ -69,6 +69,15 @@ export default function CustomersView({
 
   // Filter customers
   const filteredCustomers = customers.filter(c => {
+    if (currentUser?.role !== 'Super Admin') {
+      const branchAdminId = currentUser?.role === 'Admin' 
+        ? currentUser.id 
+        : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+      if (c.createdBy && c.createdBy !== branchAdminId) {
+        return false;
+      }
+    }
+
     const matchesSearch = 
       c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       c.phoneNumber.includes(searchQuery) ||
@@ -89,6 +98,10 @@ export default function CustomersView({
     e.preventDefault();
     if (!newName || !newPhone) return;
 
+    const branchAdminId = currentUser?.role === 'Admin' 
+      ? currentUser.id 
+      : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
     const newCustomer: Customer = {
       id: `cust-${Date.now().toString().slice(-6)}`,
       name: newName,
@@ -100,7 +113,8 @@ export default function CustomersView({
       dueAmount: Number(newDue) || 0,
       documents: [],
       notes: newNotes || undefined,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      createdBy: branchAdminId
     };
 
     const updatedState: AppState = {

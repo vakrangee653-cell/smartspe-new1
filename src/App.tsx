@@ -60,51 +60,69 @@ export default function App() {
 
   // Real-time Firebase Auth Status Listener and Firestore Synchronizer
   React.useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    const syncState = async () => {
       setFirebaseLoading(true);
+      try {
+        const fetchedState = await getStateFromFirestore('shared_shop_state');
+        if (fetchedState) {
+          // Preserve the currently active local session (currentUser) on this device
+          const localUser = state.currentUser;
+          const mergedState = {
+            ...fetchedState,
+            currentUser: localUser
+          };
+          setState(mergedState);
+          saveState(mergedState);
+        } else {
+          // Initialize fresh workspace document
+          const baseState = getInitialState();
+          await saveStateToFirestore('shared_shop_state', baseState);
+          setState(baseState);
+          saveState(baseState);
+        }
+      } catch (err) {
+        console.error('[App] Failed to load shared state:', err);
+      } finally {
+        setFirebaseLoading(false);
+      }
+    };
+
+    syncState();
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         console.log('[App] Auth State Changed: User Signed In', firebaseUser.uid);
-        const fetchedState = await getStateFromFirestore(firebaseUser.uid);
-        if (fetchedState) {
-          // Verify currentUser represents this active Firebase authenticated profile
-          if (!fetchedState.currentUser || fetchedState.currentUser.id !== firebaseUser.uid) {
-            fetchedState.currentUser = {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'Vakrangee Operator',
-              email: firebaseUser.email || '',
-              role: (fetchedState.currentUser?.role || 'Super Admin') as UserRole,
-              phoneNumber: firebaseUser.phoneNumber || fetchedState.currentUser?.phoneNumber || '+91 99999 55555'
-            };
+        const fetchedState = await getStateFromFirestore('shared_shop_state');
+        const base = fetchedState || state;
+        
+        const updatedState = {
+          ...base,
+          currentUser: {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Vakrangee Operator',
+            email: firebaseUser.email || '',
+            role: ((firebaseUser.email?.toLowerCase().includes('admin') || firebaseUser.email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin') as UserRole,
+            phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
           }
-          setState(fetchedState);
-          saveState(fetchedState);
-        } else {
-          // Initialize fresh user workspace document in Firestore
-          const baseState = getInitialState();
-          const fbInitState = {
-            ...baseState,
-            currentUser: {
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'Vakrangee Operator',
-              email: firebaseUser.email || '',
-              role: ((firebaseUser.email?.toLowerCase().includes('admin') || firebaseUser.email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin') as UserRole,
-              phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
-            }
-          };
-          setState(fbInitState);
-          saveState(fbInitState);
-          await saveStateToFirestore(firebaseUser.uid, fbInitState);
-        }
+        };
+        
+        setState(updatedState);
+        saveState(updatedState);
+        await saveStateToFirestore('shared_shop_state', updatedState);
       } else {
-        // No Firebase user. We can keep whatever is in local state but reset Auth UI
-        const localState = getInitialState();
-        if (localState.currentUser && localState.currentUser.id.startsWith('gg-')) {
-          localState.currentUser = null;
-          saveState(localState);
-        }
-        setState(localState);
+        // Keep manual operator sessions active, otherwise reset guest
+        setState(prev => {
+          if (prev.currentUser && !prev.currentUser.id.startsWith('gg-') && prev.currentUser.id !== 'op-super') {
+            return prev;
+          }
+          const clean = {
+            ...prev,
+            currentUser: null
+          };
+          saveState(clean);
+          return clean;
+        });
       }
-      setFirebaseLoading(false);
     });
     return () => unsubscribe();
   }, []);
@@ -114,9 +132,8 @@ export default function App() {
     setState(newState);
     saveState(newState);
     
-    if (auth.currentUser) {
-      saveStateToFirestore(auth.currentUser.uid, newState);
-    }
+    // Save to the shared document so all admins/operators can see live updates
+    saveStateToFirestore('shared_shop_state', newState);
   };
 
   // Handle log out

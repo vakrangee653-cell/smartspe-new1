@@ -73,8 +73,8 @@ export default function AdminView({
   const filteredOperators = React.useMemo(() => {
     if (!currentUser) return operators;
     if (currentUser.role === 'Super Admin') return operators;
-    // Admins cannot see Super Admins inside their branch operator view list
-    return operators.filter(op => op.role !== 'Super Admin');
+    // Admins can only see operators they created and cannot see Super Admins
+    return operators.filter(op => op.role !== 'Super Admin' && op.createdBy === currentUser.id);
   }, [operators, currentUser]);
 
   // Commission settings inputs
@@ -267,7 +267,8 @@ export default function AdminView({
       phoneNumber: opPhone,
       password: opPassword,
       failedAttempts: 0,
-      isLockedOut: false
+      isLockedOut: false,
+      createdBy: currentUser?.id || 'op-1'
     };
 
     onUpdateState({

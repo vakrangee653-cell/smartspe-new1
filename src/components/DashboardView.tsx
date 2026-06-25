@@ -55,23 +55,41 @@ export default function DashboardView({
   const transactions = React.useMemo(() => {
     if (!currUser) return state.transactions;
     if (currUser.role === 'Super Admin') return state.transactions;
-    if (currUser.role === 'Admin') return state.transactions.filter(t => t.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.transactions.filter(t => t.createdBy === currUser.id || t.operatorId === currUser.id || myOpIds.includes(t.operatorId));
+    }
     return state.transactions.filter(t => t.operatorId === currUser.id);
-  }, [state.transactions, currUser]);
+  }, [state.transactions, state.operators, currUser]);
 
   const emitraApplications = React.useMemo(() => {
     if (!currUser) return state.emitraApplications;
     if (currUser.role === 'Super Admin') return state.emitraApplications;
-    if (currUser.role === 'Admin') return state.emitraApplications.filter(a => a.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.emitraApplications.filter(a => a.createdBy === currUser.id || a.operatorId === currUser.id || myOpIds.includes(a.operatorId));
+    }
     return state.emitraApplications.filter(a => a.operatorId === currUser.id);
-  }, [state.emitraApplications, currUser]);
+  }, [state.emitraApplications, state.operators, currUser]);
 
   const offlineWork = React.useMemo(() => {
     if (!currUser) return state.offlineWork;
     if (currUser.role === 'Super Admin') return state.offlineWork;
-    if (currUser.role === 'Admin') return state.offlineWork.filter(w => w.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.offlineWork.filter(w => w.createdBy === currUser.id || w.operatorId === currUser.id || myOpIds.includes(w.operatorId));
+    }
     return state.offlineWork.filter(w => w.operatorId === currUser.id);
-  }, [state.offlineWork, currUser]);
+  }, [state.offlineWork, state.operators, currUser]);
+
+  const customers = React.useMemo(() => {
+    if (!currUser) return state.customers;
+    if (currUser.role === 'Super Admin') return state.customers;
+    const branchAdminId = currUser.role === 'Admin' 
+      ? currUser.id 
+      : (state.operators.find(o => o.id === currUser.id)?.createdBy || 'op-1');
+    return state.customers.filter(c => !c.createdBy || c.createdBy === branchAdminId);
+  }, [state.customers, state.operators, currUser]);
 
   const { wallet } = state;
 
@@ -98,7 +116,7 @@ export default function DashboardView({
   
   // Offline work summaries
   const pendingOfflineWork = offlineWork.filter(w => w.status !== 'Delivered').length;
-  const dueCollectorSum = state.customers.reduce((sum, c) => sum + c.dueAmount, 0) + 
+  const dueCollectorSum = customers.reduce((sum, c) => sum + c.dueAmount, 0) + 
                           emitraApplications.reduce((sum, a) => sum + a.dueAmount, 0) + 
                           offlineWork.reduce((sum, o) => sum + o.dueAmount, 0);
 
@@ -326,7 +344,7 @@ export default function DashboardView({
             </div>
           </div>
           <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-            <span>Total: {state.customers.filter(c => c.dueAmount > 0).length + emitraApplications.filter(a => a.dueAmount > 0).length} accounts</span>
+            <span>Total: {customers.filter(c => c.dueAmount > 0).length + emitraApplications.filter(a => a.dueAmount > 0).length} accounts</span>
           </div>
         </div>
 

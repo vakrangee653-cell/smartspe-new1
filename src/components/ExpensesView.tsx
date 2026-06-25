@@ -44,7 +44,10 @@ export default function ExpensesView({
   const expenses = React.useMemo(() => {
     const rawExpenses = state.expenses || [];
     if (!currUser) return rawExpenses;
-    if (currUser.role === 'Super Admin' || currUser.role === 'Admin') return rawExpenses;
+    if (currUser.role === 'Super Admin') return rawExpenses;
+    if (currUser.role === 'Admin') {
+      return rawExpenses.filter(e => e.createdBy === currUser.id || !e.createdBy);
+    }
     // Operator can only view expenses added by themselves
     return rawExpenses.filter(e => e.addedBy === currUser.name);
   }, [state.expenses, currUser]);
@@ -213,6 +216,10 @@ export default function ExpensesView({
       }
     }
 
+    const branchAdminId = currUser?.role === 'Admin' 
+      ? currUser.id 
+      : (state.operators.find(o => o.id === currUser?.id)?.createdBy || 'op-1');
+
     // New Expense/Income object
     const newExpense: Expense = {
       id: `${entryType === 'Income' ? 'INC' : 'EXP'}-${Date.now().toString().slice(-6)}`,
@@ -223,7 +230,8 @@ export default function ExpensesView({
       timestamp: new Date().toISOString(),
       paymentMode,
       addedBy: staffName,
-      notes: notes.trim() ? notes : undefined
+      notes: notes.trim() ? notes : undefined,
+      createdBy: branchAdminId
     };
 
     // Update balances

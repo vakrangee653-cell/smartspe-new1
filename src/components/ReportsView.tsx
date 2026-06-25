@@ -36,7 +36,46 @@ export default function ReportsView({
   state,
   darkMode
 }: ReportsViewProps) {
-  const { transactions, emitraApplications, offlineWork, customers } = state;
+  const currUser = state.currentUser;
+
+  const transactions = React.useMemo(() => {
+    if (!currUser) return state.transactions;
+    if (currUser.role === 'Super Admin') return state.transactions;
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.transactions.filter(t => t.createdBy === currUser.id || t.operatorId === currUser.id || myOpIds.includes(t.operatorId));
+    }
+    return state.transactions.filter(t => t.operatorId === currUser.id);
+  }, [state.transactions, state.operators, currUser]);
+
+  const emitraApplications = React.useMemo(() => {
+    if (!currUser) return state.emitraApplications;
+    if (currUser.role === 'Super Admin') return state.emitraApplications;
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.emitraApplications.filter(a => a.createdBy === currUser.id || a.operatorId === currUser.id || myOpIds.includes(a.operatorId));
+    }
+    return state.emitraApplications.filter(a => a.operatorId === currUser.id);
+  }, [state.emitraApplications, state.operators, currUser]);
+
+  const offlineWork = React.useMemo(() => {
+    if (!currUser) return state.offlineWork;
+    if (currUser.role === 'Super Admin') return state.offlineWork;
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.offlineWork.filter(w => w.createdBy === currUser.id || w.operatorId === currUser.id || myOpIds.includes(w.operatorId));
+    }
+    return state.offlineWork.filter(w => w.operatorId === currUser.id);
+  }, [state.offlineWork, state.operators, currUser]);
+
+  const customers = React.useMemo(() => {
+    if (!currUser) return state.customers;
+    if (currUser.role === 'Super Admin') return state.customers;
+    const branchAdminId = currUser.role === 'Admin' 
+      ? currUser.id 
+      : (state.operators.find(o => o.id === currUser.id)?.createdBy || 'op-1');
+    return state.customers.filter(c => !c.createdBy || c.createdBy === branchAdminId);
+  }, [state.customers, state.operators, currUser]);
 
   // Active report category filter
   const [reportTab, setReportTab] = React.useState<'all_with_mobile' | 'banking' | 'emitra' | 'offline'>('all_with_mobile');

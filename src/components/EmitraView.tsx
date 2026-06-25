@@ -50,9 +50,12 @@ export default function EmitraView({
   const emitraApplications = React.useMemo(() => {
     if (!currUser) return state.emitraApplications;
     if (currUser.role === 'Super Admin') return state.emitraApplications;
-    if (currUser.role === 'Admin') return state.emitraApplications.filter(a => a.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.emitraApplications.filter(a => a.createdBy === currUser.id || a.operatorId === currUser.id || myOpIds.includes(a.operatorId));
+    }
     return state.emitraApplications.filter(a => a.operatorId === currUser.id);
-  }, [state.emitraApplications, currUser]);
+  }, [state.emitraApplications, state.operators, currUser]);
 
   const { customers, currentUser, commissionSettings, wallet } = state;
   const emitraWallet = state.emitraWallet || { balance: 25000, lastUpdated: new Date().toISOString() };
@@ -150,6 +153,10 @@ export default function EmitraView({
       return;
     }
 
+    const branchAdminId = currentUser?.role === 'Admin' 
+      ? currentUser.id 
+      : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
     const newToken = `TOKEN${Math.floor(40000000 + Math.random() * 59999999)}`;
     const newApp: EmitraApplication = {
       id: `EMI-${Math.floor(10000 + Math.random() * 89999)}`,
@@ -165,7 +172,8 @@ export default function EmitraView({
       operatorId: currentUser?.id || 'op-1',
       notes: applNotes || undefined,
       documentsSubmitted: priceDetails.listDocs,
-      paymentMode: paymentMode
+      paymentMode: paymentMode,
+      createdBy: branchAdminId
     };
 
     // Calculate wallet adjustments

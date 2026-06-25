@@ -52,7 +52,8 @@ const INITIAL_OPERATORS: Operator[] = [
     phoneNumber: '+91 94140 56789',
     password: 'operator123',
     failedAttempts: 0,
-    isLockedOut: false
+    isLockedOut: false,
+    createdBy: 'op-1'
   },
   {
     id: 'op-3',
@@ -65,7 +66,8 @@ const INITIAL_OPERATORS: Operator[] = [
     phoneNumber: '+91 91660 98765',
     password: 'operator123',
     failedAttempts: 0,
-    isLockedOut: false
+    isLockedOut: false,
+    createdBy: 'op-1'
   }
 ];
 

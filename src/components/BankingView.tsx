@@ -53,9 +53,12 @@ export default function BankingView({
   const transactions = React.useMemo(() => {
     if (!currUser) return state.transactions;
     if (currUser.role === 'Super Admin') return state.transactions;
-    if (currUser.role === 'Admin') return state.transactions.filter(t => t.operatorId !== 'op-super');
+    if (currUser.role === 'Admin') {
+      const myOpIds = state.operators.filter(op => op.createdBy === currUser.id || op.id === currUser.id).map(op => op.id);
+      return state.transactions.filter(t => t.createdBy === currUser.id || t.operatorId === currUser.id || myOpIds.includes(t.operatorId));
+    }
     return state.transactions.filter(t => t.operatorId === currUser.id);
-  }, [state.transactions, currUser]);
+  }, [state.transactions, state.operators, currUser]);
 
   const { customers, wallet, currentUser, commissionSettings } = state;
   const currentAEPSWallet = state.aepsWallet || {
@@ -188,6 +191,10 @@ export default function BankingView({
       return;
     }
 
+    const branchAdminId = currentUser?.role === 'Admin' 
+      ? currentUser.id 
+      : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
     // Create target transaction blueprint
     const txnBlueprint = {
       id: `TXN${Math.floor(100000 + Math.random() * 900000)}`,
@@ -203,7 +210,8 @@ export default function BankingView({
       operatorId: currentUser?.id || 'op-1',
       operatorName: currentUser?.name || 'Admin',
       utrNumber: utrCustom || `${Math.floor(300000000000 + Math.random() * 600000000000)}`,
-      walletDebited: isWltDebited
+      walletDebited: isWltDebited,
+      createdBy: branchAdminId
     };
 
     const updatedTxns = [txnBlueprint, ...transactions];
