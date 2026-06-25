@@ -820,7 +820,7 @@ export default function App() {
   // 2. STANDARD UNLOCKED MAIN APP CONTAINER SCREEN
   return (
     <div className={`min-h-screen flex flex-col md:flex-row transition-colors duration-300 ${
-      darkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#F8FAFC] text-slate-800'
+      darkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#EBF0F5] text-slate-900'
     }`}>
       {/* Dynamic Slide-in Navigation Sidebar */}
       <Sidebar 

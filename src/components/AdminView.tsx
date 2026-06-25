@@ -1067,6 +1067,20 @@ export default function AdminView({
                           <span className="text-[9px] text-slate-400 block leading-none">CSP Cash Limit</span>
                           <span className="font-bold text-slate-900 dark:text-white">{formatINR(op.walletLimit)}</span>
                         </div>
+                        {op.createdBy && (() => {
+                          const creatorOp = operators.find(o => o.id === op.createdBy);
+                          return (
+                            <div className="col-span-2 border-t border-slate-100 dark:border-slate-800 pt-1">
+                              <span className="text-[9px] text-slate-400 block leading-none">Created By / Creator (प्रशासक / शाखा)</span>
+                              <span className="font-bold text-slate-600 dark:text-slate-300 text-xs block truncate mt-0.5">
+                                {creatorOp 
+                                  ? `${creatorOp.name} (${creatorOp.email})` 
+                                  : (op.createdBy === 'op-super' ? 'System Super Admin (vakrangee653@gmail.com)' : op.createdBy)
+                                }
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-850">

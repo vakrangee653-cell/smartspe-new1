@@ -181,9 +181,23 @@ export default function DashboardView({
           <h1 className="text-3xl font-bold font-display tracking-tight text-slate-900 dark:text-white">
             Operational Dashboard
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-700 dark:text-slate-300 mt-0.5">
             Real-time monitoring of cashflows, eMitra files, and customer balances.
           </p>
+          {currUser?.role === 'Operator' && (() => {
+            const matchedOp = state.operators.find(op => op.id === currUser.id);
+            const creatorId = matchedOp?.createdBy;
+            const creatorOp = creatorId ? state.operators.find(o => o.id === creatorId) : null;
+            return (
+              <div className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-450 flex items-center gap-1.5 bg-blue-500/5 px-3 py-1.5 rounded-xl border border-blue-500/10 w-fit">
+                <span>🏢</span>
+                <span>सम्बद्ध शाखा (Branch Admin):</span>
+                <span className="font-extrabold text-blue-600 dark:text-blue-400 font-sans">
+                  {creatorOp ? `${creatorOp.name} (${creatorOp.email})` : (creatorId === 'op-super' ? 'System Super Admin (vakrangee653@gmail.com)' : 'Vakrangee Kendra')}
+                </span>
+              </div>
+            );
+          })()}
         </div>
         <div className="flex items-center gap-2">
           <div className={`p-2 rounded-xl text-center text-xs font-mono border ${
@@ -214,7 +228,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 CSP Cash Limit
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-emerald-600 dark:text-emerald-400">
@@ -222,7 +236,7 @@ export default function DashboardView({
               </h3>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Branch Capital Balance</span>
           </div>
         </div>
@@ -241,7 +255,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
                 Commission Wallet
               </p>
               <div className="space-y-1">
@@ -260,7 +274,7 @@ export default function DashboardView({
               </div>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Total & Daily Commission</span>
           </div>
         </div>
@@ -279,7 +293,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Today's Txn Volume
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-blue-600 dark:text-blue-450">
@@ -287,7 +301,7 @@ export default function DashboardView({
               </h3>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Succ: {successTodayTxns.length} | Fail: {failedTodayTxns.length}</span>
           </div>
         </div>
@@ -306,7 +320,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Today's Extra Income
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-purple-600 dark:text-purple-450">
@@ -314,7 +328,7 @@ export default function DashboardView({
               </h3>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Avg yield ~0.42%</span>
           </div>
         </div>
@@ -335,7 +349,7 @@ export default function DashboardView({
               </button>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Customer Due Balances
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-amber-500">
@@ -343,7 +357,7 @@ export default function DashboardView({
               </h3>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>Total: {customers.filter(c => c.dueAmount > 0).length + emitraApplications.filter(a => a.dueAmount > 0).length} accounts</span>
           </div>
         </div>
@@ -362,7 +376,7 @@ export default function DashboardView({
               </span>
             </div>
             <div className="mt-3">
-              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+              <p className="text-[10px] font-medium text-slate-700 dark:text-slate-300 uppercase tracking-wider">
                 Pending Work Summary
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-indigo-500">
@@ -370,7 +384,7 @@ export default function DashboardView({
               </h3>
             </div>
           </div>
-          <div className="flex items-center justify-between text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-400 mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800">
             <span>eMitra: {pendingEmitraCount} | Offline: {pendingOfflineWork}</span>
           </div>
         </div>
@@ -378,7 +392,7 @@ export default function DashboardView({
 
       {/* Quick Action Triggers Grid */}
       <div className="space-y-3">
-        <h4 className="text-xs font-mono font-bold tracking-widest text-slate-400 uppercase">
+        <h4 className="text-xs font-mono font-bold tracking-widest text-slate-600 dark:text-slate-400 uppercase">
           Quick Action Services
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -394,7 +408,7 @@ export default function DashboardView({
             </div>
             <div>
               <span className="text-sm font-bold block">eMitra Portal</span>
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">Apply New citizen forms & certificate logs</span>
+              <span className="text-[11px] text-slate-600 dark:text-slate-400 block mt-0.5">Apply New citizen forms & certificate logs</span>
             </div>
           </button>
 
@@ -410,7 +424,7 @@ export default function DashboardView({
             </div>
             <div>
               <span className="text-sm font-bold block">aePS Cash Banking</span>
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">Instant cash withdrawal & deposit</span>
+              <span className="text-[11px] text-slate-600 dark:text-slate-400 block mt-0.5">Instant cash withdrawal & deposit</span>
             </div>
           </button>
           
@@ -426,7 +440,7 @@ export default function DashboardView({
             </div>
             <div>
               <span className="text-sm font-bold block">Offline Register</span>
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 block mt-0.5">Log custom offline customer work forms</span>
+              <span className="text-[11px] text-slate-600 dark:text-slate-400 block mt-0.5">Log custom offline customer work forms</span>
             </div>
           </button>
         </div>

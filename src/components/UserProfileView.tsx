@@ -247,6 +247,22 @@ export default function UserProfileView({
                   {currentUser.phoneNumber}
                 </span>
               </div>
+              {currentUser.role === 'Operator' && (() => {
+                const matchedOp = state.operators.find(op => op.id === currentUser.id);
+                const creatorId = matchedOp?.createdBy;
+                const creatorOp = creatorId ? state.operators.find(o => o.id === creatorId) : null;
+                return (
+                  <div className="flex flex-col gap-1 border-t border-slate-100 dark:border-slate-800 pt-2.5 mt-1 text-left">
+                    <span className="font-semibold text-slate-400 text-[9px] uppercase font-mono tracking-wider">शाखा प्रशासक (Your Admin)</span>
+                    <span className="font-extrabold text-blue-600 dark:text-blue-400 text-xs">
+                      {creatorOp ? creatorOp.name : (creatorId === 'op-super' ? 'System Super Admin' : 'Vakrangee Kendra')}
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block truncate">
+                      {creatorOp ? creatorOp.email : (creatorId === 'op-super' ? 'vakrangee653@gmail.com' : '')}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 

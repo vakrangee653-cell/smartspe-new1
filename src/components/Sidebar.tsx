@@ -236,6 +236,16 @@ export default function Sidebar({
                   ID: {currentUser?.id.toUpperCase()}
                 </span>
               </div>
+              {currentUser?.role === 'Operator' && (() => {
+                const matchedOp = operators?.find(op => op.id === currentUser?.id);
+                const creatorId = matchedOp?.createdBy;
+                const creatorOp = creatorId ? operators?.find(o => o.id === creatorId) : null;
+                return (
+                  <div className="text-[9px] text-slate-500 dark:text-slate-400 mt-1.5 leading-none truncate border-t border-blue-200/40 dark:border-slate-800/40 pt-1">
+                    प्रशासक (Admin): <span className="font-bold text-blue-600 dark:text-blue-450 block truncate mt-0.5">{creatorOp ? `${creatorOp.name} (${creatorOp.email})` : (creatorId === 'op-super' ? 'Super Admin (vakrangee653@gmail.com)' : 'Vakrangee')}</span>
+                  </div>
+                );
+              })()}
             </div>
           </button>
 
