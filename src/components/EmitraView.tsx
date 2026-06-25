@@ -70,7 +70,10 @@ export default function EmitraView({
   // Form states
   const [guestName, setGuestName] = React.useState('');
   const [guestPhone, setGuestPhone] = React.useState('');
-  const [selectedService, setSelectedService] = React.useState<EmitraServiceType>('Jan Aadhaar Services');
+  const [selectedService, setSelectedService] = React.useState<EmitraServiceType>(() => {
+    const keys = Object.keys(state.commissionSettings.emitraRates || {});
+    return keys.includes('Jan Aadhaar Services') ? 'Jan Aadhaar Services' : (keys[0] || '');
+  });
   const [initialStatus, setInitialStatus] = React.useState<EmitraApplication['status']>('Submitted');
   const [paymentMode, setPaymentMode] = React.useState<'Cash' | 'Online'>('Cash');
   const [applNotes, setApplNotes] = React.useState('');
@@ -140,7 +143,7 @@ export default function EmitraView({
     }
 
     const priceDetails = SERVICE_FEES[selectedService];
-    const costVal = priceDetails.fee;
+    const costVal = priceDetails ? priceDetails.fee : 100;
 
     // "welet amount less hokar seh rashi inncome me add ho"
     const calculatedIncome = Math.max(0, totalCharged - costVal);
@@ -171,7 +174,7 @@ export default function EmitraView({
       dueAmount: dueAmount,
       operatorId: currentUser?.id || 'op-1',
       notes: applNotes || undefined,
-      documentsSubmitted: priceDetails.listDocs,
+      documentsSubmitted: priceDetails ? priceDetails.listDocs : [],
       paymentMode: paymentMode,
       createdBy: branchAdminId
     };
@@ -246,7 +249,10 @@ export default function EmitraView({
     setApplNotes('');
     setInitialStatus('Submitted');
     setPaymentMode('Cash');
-    const defaultJanAadhaarTotal = SERVICE_FEES['Jan Aadhaar Services'].fee + (commissionSettings.emitraRates['Jan Aadhaar Services'] || 35);
+    const firstServiceKey = Object.keys(SERVICE_FEES)[0] || '';
+    const defaultJanAadhaarFee = SERVICE_FEES['Jan Aadhaar Services']?.fee ?? (SERVICE_FEES[firstServiceKey]?.fee ?? 100);
+    const defaultJanAadhaarComm = commissionSettings.emitraRates['Jan Aadhaar Services'] ?? (commissionSettings.emitraRates[firstServiceKey] ?? 35);
+    const defaultJanAadhaarTotal = defaultJanAadhaarFee + defaultJanAadhaarComm;
     setTotalCharged(defaultJanAadhaarTotal);
     setAmountCollected(defaultJanAadhaarTotal);
     setIsApplying(false);
@@ -552,7 +558,7 @@ export default function EmitraView({
                     id="deduct_wallet_chk"
                   />
                   <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    Deduct Government cost ({formatINR(SERVICE_FEES[selectedService].fee)}) from eMitra wallet
+                    Deduct Government cost ({formatINR(SERVICE_FEES[selectedService]?.fee || 0)}) from eMitra wallet
                   </span>
                 </label>
               </div>
@@ -564,7 +570,7 @@ export default function EmitraView({
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-400 font-medium">SSO Wallet Cost:</span>
                   <span className="font-mono font-bold text-slate-700 dark:text-slate-300">
-                    {formatINR(SERVICE_FEES[selectedService].fee)}
+                    {formatINR(SERVICE_FEES[selectedService]?.fee || 0)}
                   </span>
                 </div>
                 
@@ -578,7 +584,7 @@ export default function EmitraView({
                 <div className="flex justify-between items-center border-t border-slate-100 dark:border-slate-800 pt-2 text-xs">
                   <span className="text-emerald-500 font-bold">Seh Rashi (Your Income):</span>
                   <span className="font-mono font-extrabold text-emerald-500 block text-sm">
-                    +{formatINR(Math.max(0, totalCharged - SERVICE_FEES[selectedService].fee))}
+                    +{formatINR(Math.max(0, totalCharged - (SERVICE_FEES[selectedService]?.fee || 0)))}
                   </span>
                 </div>
 
@@ -601,7 +607,7 @@ export default function EmitraView({
                 <div className="text-[10px] text-slate-400 bg-slate-50 dark:bg-slate-950/40 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850">
                   <span className="font-semibold block text-[11px] mb-1.5 text-slate-500 dark:text-slate-300">Mandatory KYC Checklist:</span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-2 gap-y-1">
-                    {SERVICE_FEES[selectedService].listDocs.map((doc) => (
+                    {(SERVICE_FEES[selectedService]?.listDocs || []).map((doc) => (
                       <div key={doc} className="flex items-center gap-1.5 text-[10px]">
                         <CornerDownRight size={10} className="text-blue-500 shrink-0" />
                         <span className="truncate">{doc}</span>
