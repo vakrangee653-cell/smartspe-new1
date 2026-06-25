@@ -255,7 +255,8 @@ export default function LoginView({
           name: `${operatorMatched.name} (${operatorMatched.role})`,
           email: operatorMatched.email,
           role: operatorMatched.role,
-          phoneNumber: operatorMatched.phoneNumber
+          phoneNumber: operatorMatched.phoneNumber,
+          createdBy: operatorMatched.createdBy
         },
         securityLogs: [successLog, ...state.securityLogs]
       });
@@ -347,7 +348,8 @@ export default function LoginView({
           name: `${opPreset.name} (${opPreset.role === 'Super Admin' ? 'Super Admin' : opPreset.role})`,
           email: opPreset.email,
           role: opPreset.role,
-          phoneNumber: opPreset.phoneNumber
+          phoneNumber: opPreset.phoneNumber,
+          createdBy: opPreset.createdBy
         },
         securityLogs: [successLog, ...state.securityLogs]
       });
@@ -982,7 +984,8 @@ export default function LoginView({
                               name: `${tempLoginOp.name} (${tempLoginOp.role === 'Super Admin' ? 'Super Admin' : tempLoginOp.role})`,
                               email: tempLoginOp.email,
                               role: tempLoginOp.role,
-                              phoneNumber: tempLoginOp.phoneNumber
+                              phoneNumber: tempLoginOp.phoneNumber,
+                              createdBy: tempLoginOp.createdBy
                             },
                             securityLogs: [successLog, ...state.securityLogs]
                           });

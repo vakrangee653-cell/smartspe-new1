@@ -170,6 +170,7 @@ export interface AppState {
     email: string;
     role: UserRole;
     phoneNumber: string;
+    createdBy?: string;
   } | null;
   shopDetails?: ShopDetails;
   wallet: WalletState;

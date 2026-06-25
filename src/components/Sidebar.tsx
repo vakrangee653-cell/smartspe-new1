@@ -23,7 +23,7 @@ import {
   User,
   LogOut
 } from 'lucide-react';
-import { UserRole } from '../types';
+import { UserRole, Operator } from '../types';
 import { formatINR } from '../utils';
 import SmartSpeLogo from './SmartSpeLogo';
 
@@ -37,6 +37,9 @@ interface SidebarProps {
   totalCommission: number;
   todayCommission?: number;
   onLogout: () => void;
+  selectedBranchId?: string;
+  setSelectedBranchId?: (id: string) => void;
+  operators?: Operator[];
 }
 
 export default function Sidebar({
@@ -48,7 +51,10 @@ export default function Sidebar({
   walletBalance,
   totalCommission,
   todayCommission,
-  onLogout
+  onLogout,
+  selectedBranchId,
+  setSelectedBranchId,
+  operators
 }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
@@ -162,7 +168,33 @@ export default function Sidebar({
 
 
         {/* Sidebar Main Navigation Lists */}
-        <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto pb-4">
+        <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto pb-4 pt-4">
+          {currentUser?.role === 'Super Admin' && setSelectedBranchId && operators && (
+            <div className="mb-4 p-3 bg-blue-600/5 dark:bg-white/5 rounded-2xl border border-blue-500/10 dark:border-white/5 space-y-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 font-mono block">
+                🏢 Selected Branch (शाखा चयन)
+              </span>
+              <select
+                value={selectedBranchId}
+                onChange={(e) => setSelectedBranchId(e.target.value)}
+                className={`w-full px-2.5 py-1.5 rounded-xl border text-[11px] font-bold outline-hidden transition-all cursor-pointer ${
+                  darkMode 
+                    ? 'bg-slate-900 border-slate-800 text-white focus:border-blue-500' 
+                    : 'bg-white border-blue-200 text-slate-900 focus:border-blue-600'
+                }`}
+              >
+                <option value="all">All Branches (कुल शाखाएँ)</option>
+                {operators
+                  .filter(op => op.role === 'Admin')
+                  .map(admin => (
+                    <option key={admin.id} value={admin.id}>
+                      {admin.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

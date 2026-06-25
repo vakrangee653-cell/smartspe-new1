@@ -148,6 +148,7 @@ export default function AdminView({
 
   // Gating access checks (Strict permission verification)
   const isAuthorized = currentUser?.role === 'Admin' || currentUser?.role === 'Super Admin';
+  const isSuperAdmin = currentUser?.role === 'Super Admin';
 
   if (!isAuthorized) {
     return (

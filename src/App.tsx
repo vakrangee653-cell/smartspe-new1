@@ -58,30 +58,37 @@ export default function App() {
   // Pre-action triggers for navigation shortcuts
   const [activePreAction, setActivePreAction] = React.useState<string | null>(null);
 
+  // Selected Branch ID for Super Admin View Isolation and Switcher
+  const [selectedBranchId, setSelectedBranchId] = React.useState<string>('all');
+
   // Real-time Firebase Auth Status Listener and Firestore Synchronizer
   React.useEffect(() => {
     const syncState = async () => {
       setFirebaseLoading(true);
       try {
-        const fetchedState = await getStateFromFirestore('shared_shop_state');
-        if (fetchedState) {
-          // Preserve the currently active local session (currentUser) on this device
-          const localUser = state.currentUser;
-          const mergedState = {
-            ...fetchedState,
-            currentUser: localUser
-          };
-          setState(mergedState);
-          saveState(mergedState);
+        console.log('[App] Initial Sync - Fetching central operator registry...');
+        const centralState = await getStateFromFirestore('shared_shop_state');
+        if (centralState) {
+          setState(prev => {
+            const merged = {
+              ...prev,
+              operators: centralState.operators || prev.operators,
+              securityLogs: centralState.securityLogs || prev.securityLogs,
+              commissionSettings: centralState.commissionSettings || prev.commissionSettings
+            };
+            saveState(merged);
+            return merged;
+          });
         } else {
-          // Initialize fresh workspace document
-          const baseState = getInitialState();
-          await saveStateToFirestore('shared_shop_state', baseState);
-          setState(baseState);
-          saveState(baseState);
+          const defaultState = getInitialState();
+          await saveStateToFirestore('shared_shop_state', {
+            operators: defaultState.operators,
+            securityLogs: defaultState.securityLogs,
+            commissionSettings: defaultState.commissionSettings
+          });
         }
       } catch (err) {
-        console.error('[App] Failed to load shared state:', err);
+        console.error('[App] Failed to load central state:', err);
       } finally {
         setFirebaseLoading(false);
       }
@@ -92,23 +99,21 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         console.log('[App] Auth State Changed: User Signed In', firebaseUser.uid);
-        const fetchedState = await getStateFromFirestore('shared_shop_state');
-        const base = fetchedState || state;
-        
-        const updatedState = {
-          ...base,
-          currentUser: {
+        setState(prev => {
+          const updatedUser = {
             id: firebaseUser.uid,
             name: firebaseUser.displayName || 'Vakrangee Operator',
             email: firebaseUser.email || '',
             role: ((firebaseUser.email?.toLowerCase().includes('admin') || firebaseUser.email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin') as UserRole,
             phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
-          }
-        };
-        
-        setState(updatedState);
-        saveState(updatedState);
-        await saveStateToFirestore('shared_shop_state', updatedState);
+          };
+          const clean = {
+            ...prev,
+            currentUser: updatedUser
+          };
+          saveState(clean);
+          return clean;
+        });
       } else {
         // Keep manual operator sessions active, otherwise reset guest
         setState(prev => {
@@ -127,13 +132,303 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Reactive isolated state loader (whenever currentUser ID changes, selectedBranchId changes, or operators count changes)
+  React.useEffect(() => {
+    const syncIsolatedState = async () => {
+      if (!state.currentUser) return;
+      
+      const isSuper = state.currentUser.role === 'Super Admin';
+      
+      if (isSuper) {
+        if (selectedBranchId === 'all') {
+          console.log('[App] Super Admin - Fetching and aggregating ALL branches...');
+          setFirebaseLoading(true);
+          try {
+            // Get all registered Admins in the network
+            const admins = state.operators.filter(op => op.role === 'Admin');
+            
+            // If there are no admins yet, load op-super as default or empty
+            if (admins.length === 0) {
+              const opSuperData = await getStateFromFirestore('shop_state_op-super');
+              if (opSuperData) {
+                setState(prev => ({
+                  ...prev,
+                  shopDetails: opSuperData.shopDetails || prev.shopDetails,
+                  wallet: opSuperData.wallet || prev.wallet,
+                  aepsWallet: opSuperData.aepsWallet || prev.aepsWallet,
+                  emitraWallet: opSuperData.emitraWallet || prev.emitraWallet,
+                  customers: opSuperData.customers || prev.customers,
+                  transactions: opSuperData.transactions || prev.transactions,
+                  emitraApplications: opSuperData.emitraApplications || prev.emitraApplications,
+                  offlineWork: opSuperData.offlineWork || prev.offlineWork,
+                  expenses: opSuperData.expenses || prev.expenses,
+                  commissionSettings: opSuperData.commissionSettings || prev.commissionSettings,
+                }));
+              }
+              return;
+            }
+
+            // Fetch states for all Admins
+            const fetchedStates = await Promise.all(
+              admins.map(async (admin) => {
+                const data = await getStateFromFirestore(`shop_state_${admin.id}`);
+                return { adminId: admin.id, data };
+              })
+            );
+            
+            // Filter out empty/null states
+            const validStates = fetchedStates.filter(s => s.data !== null) as { adminId: string; data: any }[];
+            
+            // Now aggregate the states
+            let aggWalletBalance = 0;
+            let aggWithdrawnCommission = 0;
+            let aggTotalCommissionEarned = 0;
+            
+            let aggAepsOnlineBalance = 0;
+            let aggAepsPhysicalBalance = 0;
+            
+            let aggEmitraWalletBalance = 0;
+            
+            let aggCustomers: any[] = [];
+            let aggTransactions: any[] = [];
+            let aggEmitraApplications: any[] = [];
+            let aggOfflineWork: any[] = [];
+            let aggExpenses: any[] = [];
+            
+            validStates.forEach(({ data }) => {
+              if (data.wallet) {
+                aggWalletBalance += Number(data.wallet.balance || 0);
+                aggWithdrawnCommission += Number(data.wallet.withdrawnCommission || 0);
+                aggTotalCommissionEarned += Number(data.wallet.totalCommissionEarned || 0);
+              }
+              if (data.aepsWallet) {
+                aggAepsOnlineBalance += Number(data.aepsWallet.onlineBalance || 0);
+                aggAepsPhysicalBalance += Number(data.aepsWallet.physicalBalance || 0);
+              }
+              if (data.emitraWallet) {
+                aggEmitraWalletBalance += Number(data.emitraWallet.balance || 0);
+              }
+              if (Array.isArray(data.customers)) {
+                aggCustomers = [...aggCustomers, ...data.customers];
+              }
+              if (Array.isArray(data.transactions)) {
+                aggTransactions = [...aggTransactions, ...data.transactions];
+              }
+              if (Array.isArray(data.emitraApplications)) {
+                aggEmitraApplications = [...aggEmitraApplications, ...data.emitraApplications];
+              }
+              if (Array.isArray(data.offlineWork)) {
+                aggOfflineWork = [...aggOfflineWork, ...data.offlineWork];
+              }
+              if (Array.isArray(data.expenses)) {
+                aggExpenses = [...aggExpenses, ...data.expenses];
+              }
+            });
+            
+            // Remove duplicates for customers (by id or phone)
+            const seenCust = new Set();
+            const uniqueCustomers = aggCustomers.filter(c => {
+              if (!c?.id) return false;
+              const duplicate = seenCust.has(c.id);
+              seenCust.add(c.id);
+              return !duplicate;
+            });
+
+            // Sort lists by timestamp desc or date desc to keep them organized
+            aggTransactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            aggEmitraApplications.sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime());
+            aggOfflineWork.sort((a, b) => new Date(b.receivedDate).getTime() - new Date(a.receivedDate).getTime());
+            aggExpenses.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            
+            setState(prev => {
+              const merged = {
+                ...prev,
+                wallet: {
+                  balance: aggWalletBalance,
+                  withdrawnCommission: aggWithdrawnCommission,
+                  totalCommissionEarned: aggTotalCommissionEarned,
+                  lastUpdated: new Date().toISOString()
+                },
+                aepsWallet: {
+                  onlineBalance: aggAepsOnlineBalance,
+                  physicalBalance: aggAepsPhysicalBalance,
+                  lastUpdated: new Date().toISOString()
+                },
+                emitraWallet: {
+                  balance: aggEmitraWalletBalance,
+                  lastUpdated: new Date().toISOString()
+                },
+                customers: uniqueCustomers,
+                transactions: aggTransactions,
+                emitraApplications: aggEmitraApplications,
+                offlineWork: aggOfflineWork,
+                expenses: aggExpenses,
+              };
+              saveState(merged);
+              return merged;
+            });
+            
+          } catch (err) {
+            console.error('[App] Failed to load aggregated shop states:', err);
+          } finally {
+            setFirebaseLoading(false);
+          }
+        } else {
+          // Fetch specific branch data
+          console.log(`[App] Super Admin - Fetching branch data for Admin: ${selectedBranchId}`);
+          setFirebaseLoading(true);
+          try {
+            const isolatedData = await getStateFromFirestore(`shop_state_${selectedBranchId}`);
+            if (isolatedData) {
+              setState(prev => {
+                const merged = {
+                  ...prev,
+                  shopDetails: isolatedData.shopDetails || prev.shopDetails,
+                  wallet: isolatedData.wallet || prev.wallet,
+                  aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
+                  emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
+                  customers: isolatedData.customers || prev.customers,
+                  transactions: isolatedData.transactions || prev.transactions,
+                  emitraApplications: isolatedData.emitraApplications || prev.emitraApplications,
+                  offlineWork: isolatedData.offlineWork || prev.offlineWork,
+                  expenses: isolatedData.expenses || prev.expenses,
+                };
+                saveState(merged);
+                return merged;
+              });
+            } else {
+              console.log(`[App] Selected branch state not found for admin ${selectedBranchId}, using standard templates.`);
+            }
+          } catch (err) {
+            console.error('[App] Failed to load selected branch state:', err);
+          } finally {
+            setFirebaseLoading(false);
+          }
+        }
+      } else {
+        // Normal Admin or Operator isolated loading
+        const adminId = state.currentUser.role === 'Operator'
+          ? (state.currentUser.createdBy || 'op-1')
+          : state.currentUser.id;
+          
+        console.log(`[App] Current user is ${state.currentUser.role}. Branch Admin ID resolved: ${adminId}`);
+        setFirebaseLoading(true);
+        try {
+          const isolatedData = await getStateFromFirestore(`shop_state_${adminId}`);
+          if (isolatedData) {
+            setState(prev => {
+              const merged = {
+                ...prev,
+                shopDetails: isolatedData.shopDetails || prev.shopDetails,
+                wallet: isolatedData.wallet || prev.wallet,
+                aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
+                emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
+                customers: isolatedData.customers || prev.customers,
+                transactions: isolatedData.transactions || prev.transactions,
+                emitraApplications: isolatedData.emitraApplications || prev.emitraApplications,
+                offlineWork: isolatedData.offlineWork || prev.offlineWork,
+                expenses: isolatedData.expenses || prev.expenses,
+              };
+              saveState(merged);
+              return merged;
+            });
+          } else {
+            // Initialize isolated state for this Admin
+            console.log(`[App] Initializing new isolated shop state document for Admin: ${adminId}`);
+            const defaultIsolated = {
+              shopDetails: state.shopDetails,
+              wallet: state.wallet,
+              aepsWallet: state.aepsWallet,
+              emitraWallet: state.emitraWallet,
+              customers: state.customers,
+              transactions: state.transactions,
+              emitraApplications: state.emitraApplications,
+              offlineWork: state.offlineWork,
+              expenses: state.expenses,
+            };
+            await saveStateToFirestore(`shop_state_${adminId}`, defaultIsolated);
+          }
+        } catch (err) {
+          console.error('[App] Failed to load isolated shop state:', err);
+        } finally {
+          setFirebaseLoading(false);
+        }
+      }
+    };
+
+    syncIsolatedState();
+  }, [state.currentUser?.id, selectedBranchId, state.operators.length]);
+
   // Synchronize state changes to localStorage and cloud Firestore
   const handleUpdateState = (newState: AppState) => {
     setState(newState);
     saveState(newState);
     
-    // Save to the shared document so all admins/operators can see live updates
-    saveStateToFirestore('shared_shop_state', newState);
+    // 1. Save global/shared data (operators list, security logs, and central commission settings) to the central shared document
+    const centralData = {
+      operators: newState.operators,
+      securityLogs: newState.securityLogs,
+      commissionSettings: newState.commissionSettings
+    };
+    saveStateToFirestore('shared_shop_state', centralData);
+
+    // 2. Save isolated shop/branch data to the Admin's private shop state document
+    if (newState.currentUser) {
+      const isSuper = newState.currentUser.role === 'Super Admin';
+      
+      if (isSuper) {
+        // If Super Admin selected a specific branch, they save changes to THAT branch's document!
+        // (If they are in 'all' view, saving is blocked or saves to 'op-super' to protect data)
+        if (selectedBranchId !== 'all') {
+          const isolatedData = {
+            shopDetails: newState.shopDetails,
+            wallet: newState.wallet,
+            aepsWallet: newState.aepsWallet,
+            emitraWallet: newState.emitraWallet,
+            customers: newState.customers,
+            transactions: newState.transactions,
+            emitraApplications: newState.emitraApplications,
+            offlineWork: newState.offlineWork,
+            expenses: newState.expenses,
+            commissionSettings: newState.commissionSettings
+          };
+          saveStateToFirestore(`shop_state_${selectedBranchId}`, isolatedData);
+        } else {
+          // Standard backup for Super Admin's personal root file
+          const isolatedData = {
+            shopDetails: newState.shopDetails,
+            wallet: newState.wallet,
+            aepsWallet: newState.aepsWallet,
+            emitraWallet: newState.emitraWallet,
+            customers: newState.customers,
+            transactions: newState.transactions,
+            emitraApplications: newState.emitraApplications,
+            offlineWork: newState.offlineWork,
+            expenses: newState.expenses,
+            commissionSettings: newState.commissionSettings
+          };
+          saveStateToFirestore('shop_state_op-super', isolatedData);
+        }
+      } else {
+        const adminId = newState.currentUser.role === 'Operator'
+          ? (newState.currentUser.createdBy || 'op-1')
+          : newState.currentUser.id;
+
+        const isolatedData = {
+          shopDetails: newState.shopDetails,
+          wallet: newState.wallet,
+          aepsWallet: newState.aepsWallet,
+          emitraWallet: newState.emitraWallet,
+          customers: newState.customers,
+          transactions: newState.transactions,
+          emitraApplications: newState.emitraApplications,
+          offlineWork: newState.offlineWork,
+          expenses: newState.expenses,
+          commissionSettings: newState.commissionSettings
+        };
+        saveStateToFirestore(`shop_state_${adminId}`, isolatedData);
+      }
+    }
   };
 
   // Handle log out
@@ -464,6 +759,9 @@ export default function App() {
         totalCommission={state.wallet.totalCommissionEarned}
         todayCommission={todayCommission}
         onLogout={handleLogout}
+        selectedBranchId={selectedBranchId}
+        setSelectedBranchId={setSelectedBranchId}
+        operators={state.operators}
       />
 
       {/* Main Workspace Frame container */}
@@ -486,6 +784,33 @@ export default function App() {
               <ShieldCheck size={14} className="text-blue-500" />
               <span>JWT Signed</span>
             </div>
+
+            {/* Branch Selector for Super Admins */}
+            {state.currentUser?.role === 'Super Admin' && (
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-550 dark:text-slate-400 font-sans">
+                  🏢 Active Branch (सक्रिय शाखा):
+                </span>
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => setSelectedBranchId(e.target.value)}
+                  className={`px-3 py-1.5 rounded-xl border text-[11px] font-bold outline-hidden transition-all cursor-pointer ${
+                    darkMode 
+                      ? 'bg-slate-900 border-slate-800 text-white hover:border-slate-700 focus:border-blue-500' 
+                      : 'bg-white border-blue-200 text-slate-900 hover:border-blue-350 focus:border-blue-600'
+                  }`}
+                >
+                  <option value="all">All Branches (कुल शाखाएँ - Aggregated)</option>
+                  {state.operators
+                    .filter(op => op.role === 'Admin')
+                    .map(admin => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.name} ({admin.email})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {/* Right panel: Operator metadata, notification drawer and clock */}
