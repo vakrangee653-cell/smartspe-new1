@@ -70,9 +70,38 @@ export default function App() {
         const centralState = await getStateFromFirestore('shared_shop_state');
         if (centralState) {
           setState(prev => {
+            let loadedOperators = centralState.operators || prev.operators;
+            const hasSmartSPEATM = loadedOperators.some((op: any) => op.email.toLowerCase() === 'smartspeatm@gmail.com');
+            
+            if (!hasSmartSPEATM) {
+              console.log('[App] Proactively injecting smartspeatm@gmail.com into loaded operator registry');
+              loadedOperators = [
+                ...loadedOperators,
+                {
+                  id: 'op-smartspeatm',
+                  name: 'SmartSPE ATM Admin',
+                  email: 'smartspeatm@gmail.com',
+                  role: 'Admin',
+                  status: 'Active',
+                  walletLimit: 500000,
+                  commissionRate: 80,
+                  phoneNumber: '+91 99999 77777',
+                  password: 'admin123',
+                  failedAttempts: 0,
+                  isLockedOut: false,
+                  createdBy: 'op-super'
+                }
+              ];
+              saveStateToFirestore('shared_shop_state', {
+                operators: loadedOperators,
+                securityLogs: centralState.securityLogs || prev.securityLogs,
+                commissionSettings: centralState.commissionSettings || prev.commissionSettings
+              });
+            }
+
             const merged = {
               ...prev,
-              operators: centralState.operators || prev.operators,
+              operators: loadedOperators,
               securityLogs: centralState.securityLogs || prev.securityLogs,
               commissionSettings: centralState.commissionSettings || prev.commissionSettings
             };
@@ -99,19 +128,64 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         console.log('[App] Auth State Changed: User Signed In', firebaseUser.uid);
+        const email = (firebaseUser.email || '').toLowerCase().trim();
+        const role: UserRole = (email.includes('admin') || email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin';
+        
         setState(prev => {
           const updatedUser = {
             id: firebaseUser.uid,
             name: firebaseUser.displayName || 'Vakrangee Operator',
-            email: firebaseUser.email || '',
-            role: ((firebaseUser.email?.toLowerCase().includes('admin') || firebaseUser.email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin') as UserRole,
+            email: email,
+            role: role,
             phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
           };
+          
+          const exists = prev.operators.some(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
+          let updatedOperators = [...prev.operators];
+          
+          if (!exists) {
+            console.log('[App] Auto-registering logged-in Google/Firebase user into central operator list:', email);
+            updatedOperators.push({
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'Vakrangee Operator',
+              email: email,
+              role: role === 'Super Admin' ? 'Super Admin' : 'Admin',
+              status: 'Active',
+              walletLimit: 15000,
+              commissionRate: 12,
+              phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555',
+              failedAttempts: 0,
+              isLockedOut: false,
+              createdBy: 'op-super'
+            });
+          } else {
+            updatedOperators = updatedOperators.map(op => {
+              if (op.email.toLowerCase() === email) {
+                return { 
+                  ...op, 
+                  id: firebaseUser.uid,
+                  role: op.role === 'Super Admin' ? 'Super Admin' : (role === 'Super Admin' ? 'Super Admin' : op.role)
+                };
+              }
+              return op;
+            });
+          }
+          
           const clean = {
             ...prev,
-            currentUser: updatedUser
+            currentUser: updatedUser,
+            operators: updatedOperators
           };
+          
           saveState(clean);
+          
+          // Save back to Firestore 'shared_shop_state' immediately
+          saveStateToFirestore('shared_shop_state', {
+            operators: updatedOperators,
+            securityLogs: clean.securityLogs,
+            commissionSettings: clean.commissionSettings
+          });
+          
           return clean;
         });
       } else {

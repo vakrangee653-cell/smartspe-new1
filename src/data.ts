@@ -42,6 +42,19 @@ const INITIAL_OPERATORS: Operator[] = [
     isLockedOut: false
   },
   {
+    id: 'op-smartspeatm',
+    name: 'SmartSPE ATM Admin',
+    email: 'smartspeatm@gmail.com',
+    role: 'Admin',
+    status: 'Active',
+    walletLimit: 500000,
+    commissionRate: 80,
+    phoneNumber: '+91 99999 77777',
+    password: 'admin123',
+    failedAttempts: 0,
+    isLockedOut: false
+  },
+  {
     id: 'op-2',
     name: 'Suresh Kumar',
     email: 'suresh.emitra@gmail.com',
