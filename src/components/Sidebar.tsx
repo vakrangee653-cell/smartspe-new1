@@ -67,9 +67,9 @@ export default function Sidebar({
     { id: 'offline', label: 'Offline Work', icon: ClipboardList },
     { id: 'expenses', label: 'Expenses Tracker', icon: Receipt },
     { id: 'profile', label: 'User Profile (यूज़र प्रोफ़ाइल)', icon: User },
+    { id: 'reports', label: 'Reports & Analytics', icon: FileText },
     ...(currentUser?.role === 'Super Admin' || currentUser?.role === 'Admin'
       ? [
-          { id: 'reports', label: 'Reports & Analytics', icon: FileText },
           { id: 'security', label: 'Security Portal', icon: ShieldCheck }
         ]
       : []),
@@ -184,6 +184,7 @@ export default function Sidebar({
                 }`}
               >
                 <option value="all">All Branches (कुल शाखाएँ)</option>
+                <option value="op-super">Main Branch (मुख्य शाखा - Super Admin)</option>
                 {operators
                   .filter(op => op.role === 'Admin')
                   .map(admin => (

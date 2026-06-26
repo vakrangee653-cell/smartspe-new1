@@ -705,8 +705,8 @@ export default function EmitraView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
-              {filteredApps.map((app) => (
-                <tr key={app.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-808/30">
+              {filteredApps.map((app, idx) => (
+                <tr key={`${app.id}-${idx}`} className="hover:bg-slate-50/40 dark:hover:bg-slate-808/30">
                   <td className="py-3.5 px-3">
                     <div className="space-y-0.5">
                       <span className="font-mono font-bold block text-blue-600 dark:text-blue-400">

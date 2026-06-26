@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { AppState, Transaction, TransactionType } from '../types';
 import { formatINR, formatDateNice } from '../utils';
+import { executeBankingTransaction } from '../firebase';
 
 interface BankingViewProps {
   state: AppState;
@@ -142,13 +143,12 @@ export default function BankingView({
     } else if (type === 'Withdrawal') {
       fee = 0;
       commission = amt * (commissionSettings.withdrawalRate / 100);
-    } else if (type === 'Fund Transfer') {
-      fee = commissionSettings.transferRate;
-      commission = fee * 0.6; // operator keeps 60% of branch fee
     } else if (type === 'DMT') {
-      // Typically DMT has 1% charge
       fee = amt * 0.01;
       commission = fee * (commissionSettings.dmtRate / 100); // dmtRate as percentage of the fee
+    } else if (type === 'UPI Payment') {
+      fee = 0;
+      commission = amt * 0.001; // 0.1% commission
     }
 
     return { 
@@ -161,13 +161,13 @@ export default function BankingView({
 
   const { fee, commission } = getLiveCalculations(activeType, txnAmount);
 
-  // Directly authorize transaction without PIN/OTP popup
-  const handleInitiateTransaction = (e: React.FormEvent) => {
+  // Directly authorize transaction using secure, atomic database transactions
+  const handleInitiateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (txnAmount <= 0) return;
 
     // Validate wallet balance if debit is required
-    const isWltDebited = activeType === 'Deposit' || activeType === 'DMT' || activeType === 'Fund Transfer';
+    const isWltDebited = activeType === 'Deposit' || activeType === 'DMT' || activeType === 'UPI Payment';
     const txnTotalNeed = txnAmount + fee;
     if (isWltDebited && currentAEPSWallet.onlineBalance < txnTotalNeed) {
       alert(`Insufficient AEPS online balance! Portal balance is ${formatINR(currentAEPSWallet.onlineBalance)}, transaction needs ${formatINR(txnTotalNeed)}.`);
@@ -195,93 +195,104 @@ export default function BankingView({
       ? currentUser.id 
       : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
 
-    // Create target transaction blueprint
-    const txnBlueprint = {
-      id: `TXN${Math.floor(100000 + Math.random() * 900000)}`,
-      timestamp: new Date().toISOString(),
-      customerId: undefined,
-      customerName: clientName,
-      aadhaarNumber: aadhaarNumber,
-      type: activeType,
-      amount: txnAmount,
-      fee,
-      commission,
-      status: 'Success' as const, // directly successful
-      operatorId: currentUser?.id || 'op-1',
-      operatorName: currentUser?.name || 'Admin',
-      utrNumber: utrCustom || `${Math.floor(300000000000 + Math.random() * 600000000000)}`,
-      walletDebited: isWltDebited,
-      createdBy: branchAdminId
-    };
+    try {
+      // Execute transaction atomically
+      const result = await executeBankingTransaction({
+        userId: currentUser?.id || 'op-1',
+        userName: currentUser?.name || 'Admin',
+        userRole: currentUser?.role || 'Admin',
+        customerName: clientName,
+        aadhaarNumber: aadhaarNumber || undefined,
+        type: activeType,
+        amount: txnAmount,
+        fee,
+        commission,
+        utrNumber: utrCustom,
+        adminId: branchAdminId,
+        operatorId: currentUser?.id || 'op-1',
+        operatorName: currentUser?.name || 'Admin'
+      });
 
-    const updatedTxns = [txnBlueprint, ...transactions];
-    
-    // Calculate AEPS changes
-    let aepsOnlineDiff = 0;
-    let aepsPhysicalDiff = 0;
+      // Calculate AEPS changes
+      let aepsOnlineDiff = 0;
+      let aepsPhysicalDiff = 0;
 
-    if (activeType === 'Deposit') {
-      aepsOnlineDiff = -txnAmount; // digital debited
-      aepsPhysicalDiff = txnAmount; // physical cash received
-    } else if (activeType === 'Withdrawal') {
-      aepsOnlineDiff = txnAmount; // digital portal cash credited
-      aepsPhysicalDiff = -txnAmount; // physical cash handed over
-    } else if (activeType === 'DMT' || activeType === 'Fund Transfer') {
-      aepsOnlineDiff = -(txnAmount + fee); // digital debited sent amt + fee
-      if (activeType === 'DMT') {
-        aepsOnlineDiff += commission; // DMT commission added directly to banking's online cash balance
+      if (activeType === 'Deposit') {
+        aepsOnlineDiff = -txnAmount; // digital debited
+        aepsPhysicalDiff = txnAmount; // physical cash received
+      } else if (activeType === 'Withdrawal') {
+        aepsOnlineDiff = txnAmount; // digital portal cash credited
+        aepsPhysicalDiff = -txnAmount; // physical cash handed over
+      } else if (activeType === 'DMT' || activeType === 'UPI Payment') {
+        aepsOnlineDiff = -(txnAmount + fee); // digital debited sent amt + fee
+        if (activeType === 'DMT') {
+          aepsOnlineDiff += commission; // DMT commission added directly to banking's online cash balance
+        }
+        aepsPhysicalDiff = txnAmount + fee; // physical cash collected from customer (amt + fee)
       }
-      aepsPhysicalDiff = txnAmount + fee; // physical cash collected from customer (amt + fee)
+
+      const updatedAEPSWallet = {
+        ...currentAEPSWallet,
+        onlineBalance: currentAEPSWallet.onlineBalance + aepsOnlineDiff,
+        physicalBalance: currentAEPSWallet.physicalBalance + aepsPhysicalDiff,
+        lastUpdated: new Date().toISOString()
+      };
+
+      const updatedWallet = {
+        ...wallet,
+        balance: result.wallet.balance,
+        openingBalance: result.wallet.openingBalance,
+        currentBalance: result.wallet.currentBalance,
+        credit: result.wallet.credit,
+        debit: result.wallet.debit,
+        closingBalance: result.wallet.closingBalance,
+        availableBalance: result.wallet.availableBalance,
+        lastUpdated: result.wallet.lastUpdated,
+        totalCommissionEarned: (wallet.totalCommissionEarned || 0) + commission
+      };
+
+      const updatedTxns = [result.transaction, ...state.transactions];
+      const updatedLedger = [result.ledger, ...(state.walletLedger || [])];
+
+      const updatedState: AppState = {
+        ...state,
+        transactions: updatedTxns,
+        wallet: updatedWallet,
+        aepsWallet: updatedAEPSWallet,
+        walletLedger: updatedLedger,
+        securityLogs: [
+          {
+            id: `log-${Date.now().toString().slice(-5)}`,
+            timestamp: new Date().toISOString(),
+            operatorId: currentUser?.id || 'op-1',
+            operatorName: currentUser?.name || 'Admin',
+            role: currentUser?.role || 'Admin',
+            action: `Authorized ${activeType} - Ref: ${result.transaction.id} of ₹${txnAmount}`,
+            status: 'Success',
+            ipAddress: '47.11.134.19',
+            device: 'AEPS Handset',
+            browser: 'SmartSPE Secure Client v1'
+          },
+          ...state.securityLogs
+        ]
+      };
+
+      // Save and clear
+      onUpdateState(updatedState);
+      setOtpSent(false);
+      setPendingTxnObject(null);
+      setSelectedCustId('');
+      setCustomCustName('');
+      setCustomPhone('');
+      setAadhaarNumber('');
+      setTxnAmount(0);
+      setUtrCustom('');
+      setSelectedBeneficiaryId('');
+      
+      alert(`Success! Transaction ID: ${result.transaction.id} has been processed atomically and ledger updated successfully.`);
+    } catch (err: any) {
+      alert(`Transaction Rolled Back / Failed: ${err.message}`);
     }
-
-    const updatedAEPSWallet = {
-      ...currentAEPSWallet,
-      onlineBalance: currentAEPSWallet.onlineBalance + aepsOnlineDiff,
-      physicalBalance: currentAEPSWallet.physicalBalance + aepsPhysicalDiff,
-      lastUpdated: new Date().toISOString()
-    };
-
-    const updatedWallet = {
-      ...wallet,
-      totalCommissionEarned: wallet.totalCommissionEarned + commission,
-      lastUpdated: new Date().toISOString()
-    };
-
-    const updatedState: AppState = {
-      ...state,
-      transactions: updatedTxns,
-      wallet: updatedWallet,
-      aepsWallet: updatedAEPSWallet,
-      securityLogs: [
-        {
-          id: `log-${Date.now().toString().slice(-5)}`,
-          timestamp: new Date().toISOString(),
-          operatorId: currentUser?.id || 'op-1',
-          operatorName: currentUser?.name || 'Admin',
-          role: currentUser?.role || 'Admin',
-          action: `Authorized ${activeType} - Ref: ${txnBlueprint.id} of ₹${txnAmount}`,
-          status: 'Success',
-          ipAddress: '47.11.134.19',
-          device: 'AEPS Handset',
-          browser: 'SmartSPE Secure Client v1'
-        },
-        ...state.securityLogs
-      ]
-    };
-
-    // Save and clear
-    onUpdateState(updatedState);
-    setOtpSent(false);
-    setPendingTxnObject(null);
-    setSelectedCustId('');
-    setCustomCustName('');
-    setCustomPhone('');
-    setAadhaarNumber('');
-    setTxnAmount(0);
-    setUtrCustom('');
-    setSelectedBeneficiaryId('');
-    
-    alert(`Success! Transaction ID: ${txnBlueprint.id} has been processed successfully.`);
   };
 
   // Add a DMT Beneficiary
@@ -420,24 +431,65 @@ export default function BankingView({
           {/* Quick settlement buttons */}
           <div className="flex gap-1 self-center sm:self-auto sm:ml-1 text-[10px]">
             <button
-              onClick={() => {
+              onClick={async () => {
                 const amt = Number(prompt("Enter amount to deposit physical cash into bank portal ledger (Bank Deposit):"));
                 if (!amt || amt <= 0) return;
                 if (currentAEPSWallet.physicalBalance < amt) {
                   alert("Insufficient Physical cash in hand!");
                   return;
                 }
-                const updatedState = {
-                  ...state,
-                  aepsWallet: {
+                const branchAdminId = currentUser?.role === 'Admin' 
+                  ? currentUser.id 
+                  : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
+                try {
+                  const result = await executeBankingTransaction({
+                    userId: currentUser?.id || 'op-1',
+                    userName: currentUser?.name || 'Admin',
+                    userRole: currentUser?.role || 'Admin',
+                    customerName: 'Quick Settlement Deposit',
+                    type: 'Withdrawal', // Withdrawal credits main wallet, matching cash-in logic!
+                    amount: amt,
+                    fee: 0,
+                    commission: 0,
+                    utrNumber: `SETTLE-DEP-${Date.now()}`,
+                    adminId: branchAdminId,
+                    operatorId: currentUser?.id || 'op-1',
+                    operatorName: currentUser?.name || 'Admin'
+                  });
+
+                  const updatedAEPSWallet = {
                     ...currentAEPSWallet,
                     onlineBalance: currentAEPSWallet.onlineBalance + amt,
                     physicalBalance: currentAEPSWallet.physicalBalance - amt,
                     lastUpdated: new Date().toISOString()
-                  }
-                };
-                onUpdateState(updatedState);
-                alert(`Successfully deposited ${formatINR(amt)} to bank portal.`);
+                  };
+
+                  const updatedWallet = {
+                    ...wallet,
+                    balance: result.wallet.balance,
+                    openingBalance: result.wallet.openingBalance,
+                    currentBalance: result.wallet.currentBalance,
+                    credit: result.wallet.credit,
+                    debit: result.wallet.debit,
+                    closingBalance: result.wallet.closingBalance,
+                    availableBalance: result.wallet.availableBalance,
+                    lastUpdated: result.wallet.lastUpdated
+                  };
+
+                  const updatedState = {
+                    ...state,
+                    wallet: updatedWallet,
+                    aepsWallet: updatedAEPSWallet,
+                    transactions: [result.transaction, ...state.transactions],
+                    walletLedger: [result.ledger, ...(state.walletLedger || [])]
+                  };
+
+                  onUpdateState(updatedState);
+                  alert(`Successfully deposited ${formatINR(amt)} to bank portal and recorded in ledger.`);
+                } catch (err: any) {
+                  alert(`Settlement failed: ${err.message}`);
+                }
               }}
               className="py-1 px-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold cursor-pointer transition-colors text-[10px]"
               title="Deposit Cash to Portal"
@@ -445,24 +497,65 @@ export default function BankingView({
               Deposit
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 const amt = Number(prompt("Enter amount to withdraw from bank portal ledger to physical cash (Cashing Out):"));
                 if (!amt || amt <= 0) return;
                 if (currentAEPSWallet.onlineBalance < amt) {
                   alert("Insufficient Online portal cash balance!");
                   return;
                 }
-                const updatedState = {
-                  ...state,
-                  aepsWallet: {
+                const branchAdminId = currentUser?.role === 'Admin' 
+                  ? currentUser.id 
+                  : (state.operators.find(o => o.id === currentUser?.id)?.createdBy || 'op-1');
+
+                try {
+                  const result = await executeBankingTransaction({
+                    userId: currentUser?.id || 'op-1',
+                    userName: currentUser?.name || 'Admin',
+                    userRole: currentUser?.role || 'Admin',
+                    customerName: 'Quick Settlement Withdrawal',
+                    type: 'Deposit', // Deposit debits main wallet, matching cash-out logic!
+                    amount: amt,
+                    fee: 0,
+                    commission: 0,
+                    utrNumber: `SETTLE-WTH-${Date.now()}`,
+                    adminId: branchAdminId,
+                    operatorId: currentUser?.id || 'op-1',
+                    operatorName: currentUser?.name || 'Admin'
+                  });
+
+                  const updatedAEPSWallet = {
                     ...currentAEPSWallet,
                     onlineBalance: currentAEPSWallet.onlineBalance - amt,
                     physicalBalance: currentAEPSWallet.physicalBalance + amt,
                     lastUpdated: new Date().toISOString()
-                  }
-                };
-                onUpdateState(updatedState);
-                alert(`Successfully withdrew ${formatINR(amt)} to cash-in-hand.`);
+                  };
+
+                  const updatedWallet = {
+                    ...wallet,
+                    balance: result.wallet.balance,
+                    openingBalance: result.wallet.openingBalance,
+                    currentBalance: result.wallet.currentBalance,
+                    credit: result.wallet.credit,
+                    debit: result.wallet.debit,
+                    closingBalance: result.wallet.closingBalance,
+                    availableBalance: result.wallet.availableBalance,
+                    lastUpdated: result.wallet.lastUpdated
+                  };
+
+                  const updatedState = {
+                    ...state,
+                    wallet: updatedWallet,
+                    aepsWallet: updatedAEPSWallet,
+                    transactions: [result.transaction, ...state.transactions],
+                    walletLedger: [result.ledger, ...(state.walletLedger || [])]
+                  };
+
+                  onUpdateState(updatedState);
+                  alert(`Successfully withdrew ${formatINR(amt)} to cash-in-hand and recorded in ledger.`);
+                } catch (err: any) {
+                  alert(`Settlement failed: ${err.message}`);
+                }
               }}
               className="py-1 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold cursor-pointer transition-colors text-[10px]"
               title="Withdraw Cash from Portal"
@@ -530,8 +623,8 @@ export default function BankingView({
                   >
                     <option value="Withdrawal">Withdrawal (निकासी)</option>
                     <option value="Deposit">Deposit (जमा)</option>
-                    <option value="Fund Transfer">Fund Transfer (फंड ट्रांसफर)</option>
                     <option value="DMT">DMT Transfer (घरेलू मनी ट्रांसफर)</option>
+                    <option value="UPI Payment">UPI Payment (यूपीआई भुगतान)</option>
                   </select>
                 </div>
 
@@ -650,43 +743,48 @@ export default function BankingView({
             </div>
 
             {/* Tables */}
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto font-sans">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className={`border-b text-[10px] font-mono uppercase tracking-wider text-slate-400 ${
                     darkMode ? 'border-slate-800' : 'border-slate-150'
                   }`}>
-                    <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Transaction Name</th>
-                    <th className="py-3 px-3">Reference No</th>
-                    <th className="py-3 px-3">Type</th>
-                    <th className="py-3 px-3 text-right">Cash Amount</th>
+                    <th className="py-3 px-3">Date & Time</th>
+                    <th className="py-3 px-3">Transaction details</th>
+                    <th className="py-3 px-3">Reference / UTR</th>
+                    <th className="py-3 px-3">Service & Status</th>
+                    <th className="py-3 px-3 text-right">Opening Balance</th>
+                    <th className="py-3 px-3 text-right">Closing Balance</th>
+                    <th className="py-3 px-3 text-right">Amount / Charge</th>
                     <th className="py-3 px-3 text-right">Commission</th>
                     <th className="py-3 px-3 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-350">
-                  {filteredTxns.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/40">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-350 font-mono">
+                  {filteredTxns.map((t, idx) => (
+                    <tr key={`${t.id}-${idx}`} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/40">
                       <td className="py-3 px-3 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Clock size={12} className="text-slate-400" />
-                          <span>{new Date(t.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <div className="flex items-center gap-1">
+                          <Clock size={11} className="text-slate-400" />
+                          <span>{t.date || new Date(t.timestamp).toLocaleDateString()} {t.time || new Date(t.timestamp).toLocaleTimeString()}</span>
                         </div>
                       </td>
-                      <td className="py-3 px-3 font-semibold dark:text-white-text select-all">
+                      <td className="py-3 px-3 font-semibold dark:text-white select-all font-sans">
                         <div>{t.customerName}</div>
                         {t.aadhaarNumber && (
                           <div className="text-[10px] font-mono text-slate-400 font-normal">
                             Aadhaar: xxxx-xxxx-{t.aadhaarNumber.slice(-4)}
                           </div>
                         )}
+                        <div className="text-[9px] text-slate-400 font-normal">
+                          Op: {t.operatorName} • Admin: {t.createdBy || 'Admin'}
+                        </div>
                       </td>
                       <td className="py-3 px-3 font-mono text-[10px]">
-                        <span className="block opacity-60">ID: {t.id}</span>
-                        <span className="block italic opacity-40">UTR: {t.utrNumber}</span>
+                        <span className="block font-bold">ID: {t.id}</span>
+                        <span className="block opacity-65">UTR: {t.utrNumber}</span>
                       </td>
-                      <td className="py-3 px-3 whitespace-nowrap">
+                      <td className="py-3 px-3 whitespace-nowrap font-sans">
                         <span className={`px-2 py-0.5 rounded-sm text-[9px] font-bold ${
                           t.status === 'Success' 
                             ? 'bg-emerald-500/10 text-emerald-600' 
@@ -697,17 +795,24 @@ export default function BankingView({
                           {t.type} • {t.status}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold dark:text-white">
-                        {formatINR(t.amount)}
+                      <td className="py-3 px-3 text-right opacity-70 whitespace-nowrap">
+                        {t.openingBalance !== undefined ? formatINR(t.openingBalance) : '-'}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500">
+                      <td className="py-3 px-3 text-right opacity-90 font-bold whitespace-nowrap">
+                        {t.closingBalance !== undefined ? formatINR(t.closingBalance) : '-'}
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
+                        <span className="font-bold block text-slate-900 dark:text-white">{formatINR(t.amount)}</span>
+                        {t.fee > 0 && <span className="block text-[9px] text-rose-500">Chg: {formatINR(t.fee)}</span>}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500 whitespace-nowrap">
                         {t.status === 'Success' ? `+${formatINR(t.commission)}` : '-'}
                       </td>
                       <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => printReceipt(t)}
                           disabled={t.status !== 'Success'}
-                          className={`p-1.5 rounded-lg border  transition-colors cursor-pointer ${
+                          className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
                             t.status === 'Success'
                               ? darkMode 
                                 ? 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-300' 
@@ -724,7 +829,7 @@ export default function BankingView({
 
                   {filteredTxns.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="text-center py-10 text-slate-405 italic">
+                      <td colSpan={9} className="text-center py-10 text-slate-405 italic">
                         No banking receipts matched your search filters.
                       </td>
                     </tr>

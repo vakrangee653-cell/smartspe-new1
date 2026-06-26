@@ -172,8 +172,12 @@ if (typeof window !== 'undefined') {
   });
 }
 
+import {AuthProvider} from './firebase/AuthProvider.tsx';
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 );

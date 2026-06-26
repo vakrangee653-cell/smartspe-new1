@@ -7,6 +7,7 @@ export type UserRole = 'Super Admin' | 'Admin' | 'Operator' | 'Customer';
 
 export interface Operator {
   id: string;
+  uid?: string; // mapping for user schema
   name: string;
   email: string;
   role: UserRole;
@@ -14,10 +15,16 @@ export interface Operator {
   walletLimit: number;
   commissionRate: number; // percentage
   phoneNumber: string;
+  mobile?: string; // mapping for user schema
   password?: string;
   failedAttempts?: number;
   isLockedOut?: boolean;
   createdBy?: string;
+  adminId?: string;
+  permissions?: string[];
+  walletBalance?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Customer {
@@ -43,7 +50,7 @@ export interface Customer {
   createdBy?: string;
 }
 
-export type TransactionType = 'Deposit' | 'Withdrawal' | 'Fund Transfer' | 'DMT';
+export type TransactionType = 'Deposit' | 'Withdrawal' | 'DMT' | 'UPI Payment';
 
 export interface Transaction {
   id: string;
@@ -54,6 +61,7 @@ export interface Transaction {
   type: TransactionType;
   amount: number;
   fee: number;
+  char?: number; // charges/fee mapping
   commission: number;
   status: 'Success' | 'Failed' | 'Pending';
   operatorId: string;
@@ -64,7 +72,44 @@ export interface Transaction {
   bankName?: string;
   utrNumber: string;
   walletDebited: boolean;
-  createdBy?: string;
+  createdBy?: string; // Admin ID / branch identifier
+  adminId?: string; // Explicit Admin ID
+  openingBalance?: number;
+  closingBalance?: number;
+  date?: string;
+  time?: string;
+}
+
+export interface UserWallet {
+  userId: string;
+  userName: string;
+  role: string;
+  balance: number; // Current / Available balance
+  openingBalance: number;
+  currentBalance: number;
+  credit: number;
+  debit: number;
+  closingBalance: number;
+  availableBalance: number;
+  lastUpdated: string;
+}
+
+export interface WalletLedgerEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  role: string;
+  transactionId: string;
+  service: string;
+  openingBalance: number;
+  credit: number;
+  debit: number;
+  closingBalance: number;
+  availableBalance: number;
+  status: 'Success' | 'Failed' | 'Pending';
+  operatorId: string;
+  adminId: string;
+  timestamp: string;
 }
 
 export type EmitraServiceType = string;
@@ -163,6 +208,80 @@ export interface ShopDetails {
   logoUrl?: string; // Base64 or URL of the shop logo
 }
 
+export interface InAppNotification {
+  notificationId: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error' | 'alert' | 'audit' | 'ledger' | 'system';
+  userId: string; // Target user's id or 'all' or 'broadcast'
+  role: string;   // Role permitted to read or 'all'
+  status: 'read' | 'unread';
+  createdAt: string;
+  channelsSent?: {
+    inApp: boolean;
+    email: boolean;
+    sms: boolean;
+    whatsapp: boolean;
+  };
+}
+
+export interface SettlementEntry {
+  id: string; // settlementId
+  amount: number;
+  bankName: string;
+  accountHolder: string;
+  accountNumber: string;
+  ifscCode: string;
+  type: 'Bank Settlement' | 'Wallet Settlement';
+  status: 'Pending' | 'Approved' | 'Rejected';
+  operatorId: string;
+  operatorName: string;
+  adminId: string;
+  approvedBy?: string;
+  approvedByName?: string;
+  approvedAt?: string;
+  remarks?: string;
+  createdAt: string;
+  timestamp: string;
+}
+
+export interface ActivityTimelineEntry {
+  id: string;
+  timestamp: string;
+  userId: string;
+  userName: string;
+  role: UserRole;
+  actionType: 'Login' | 'Logout' | 'Wallet Credit' | 'Wallet Debit' | 'Cash Deposit' | 'Cash Withdrawal' | 'DMT' | 'UPI Payment' | 'Settings Update' | 'User Create' | 'User Delete' | 'Role Change';
+  details: string;
+  status: 'Success' | 'Failed';
+  amount?: number;
+  ipAddress?: string;
+}
+
+export interface CommissionHistoryEntry {
+  timestamp: string;
+  action: string;
+  changedBy: string;
+  prevVal: number;
+  newVal: number;
+  prevStatus: boolean;
+  newStatus: boolean;
+}
+
+export interface CommissionRule {
+  id: string;
+  service: 'Deposit' | 'Withdrawal' | 'DMT' | 'UPI Payment' | 'eMitra' | 'Offline';
+  targetType: 'All' | 'Admin' | 'Operator';
+  targetId: string; // specific user ID or 'all'
+  targetName: string;
+  rateType: 'Percentage' | 'Fixed';
+  rateValue: number;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  history: CommissionHistoryEntry[];
+}
+
 export interface AppState {
   currentUser: {
     id: string;
@@ -183,6 +302,11 @@ export interface AppState {
   offlineWork: OfflineWorkItem[];
   securityLogs: SecurityLog[];
   expenses: Expense[];
+  walletLedger: WalletLedgerEntry[];
+  notifications: InAppNotification[];
+  settlements: SettlementEntry[];
+  activityTimeline: ActivityTimelineEntry[];
+  commissionRules: CommissionRule[];
   commissionSettings: {
     depositRate: number; // percentage, e.g. 0.2%
     withdrawalRate: number; // percentage, e.g. 0.5%

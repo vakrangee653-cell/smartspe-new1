@@ -239,9 +239,67 @@ export const getInitialState = (): AppState => {
         if (!parsed.expenses) {
           parsed.expenses = [...INITIAL_EXPENSES];
         }
+        if (!parsed.walletLedger) {
+          parsed.walletLedger = [];
+        }
         if (!parsed.shopDetails) {
           parsed.shopDetails = { ...DEFAULT_SHOP_DETAILS };
         }
+        if (!parsed.notifications) {
+          parsed.notifications = [];
+        }
+        if (!parsed.settlements) {
+          parsed.settlements = [];
+        }
+        if (!parsed.activityTimeline) {
+          parsed.activityTimeline = [];
+        }
+        if (!parsed.commissionRules) {
+          parsed.commissionRules = [];
+        }
+
+        // Proactively deduplicate state arrays
+        if (Array.isArray(parsed.customers)) {
+          const seen = new Set();
+          parsed.customers = parsed.customers.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.transactions)) {
+          const seen = new Set();
+          parsed.transactions = parsed.transactions.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.walletLedger)) {
+          const seen = new Set();
+          parsed.walletLedger = parsed.walletLedger.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.emitraApplications)) {
+          const seen = new Set();
+          parsed.emitraApplications = parsed.emitraApplications.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.offlineWork)) {
+          const seen = new Set();
+          parsed.offlineWork = parsed.offlineWork.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.expenses)) {
+          const seen = new Set();
+          parsed.expenses = parsed.expenses.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.notifications)) {
+          const seen = new Set();
+          parsed.notifications = parsed.notifications.filter((c: any) => c && c.notificationId && !seen.has(c.notificationId) && (seen.add(c.notificationId), true));
+        }
+        if (Array.isArray(parsed.settlements)) {
+          const seen = new Set();
+          parsed.settlements = parsed.settlements.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.activityTimeline)) {
+          const seen = new Set();
+          parsed.activityTimeline = parsed.activityTimeline.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+        if (Array.isArray(parsed.commissionRules)) {
+          const seen = new Set();
+          parsed.commissionRules = parsed.commissionRules.filter((c: any) => c && c.id && !seen.has(c.id) && (seen.add(c.id), true));
+        }
+
         return parsed;
       }
     } catch (e) {
@@ -269,6 +327,107 @@ export const getInitialState = (): AppState => {
     offlineWork: INITIAL_OFFLINE_WORK,
     securityLogs: INITIAL_SECURITY_LOGS,
     expenses: INITIAL_EXPENSES,
+    walletLedger: [],
+    notifications: [
+      {
+        notificationId: 'notif-1',
+        title: 'Welcome to SmartSPE Version 2.0',
+        message: 'Your high-performance CSC management dashboard is ready. All core systems are active.',
+        type: 'success',
+        userId: 'all',
+        role: 'all',
+        status: 'unread',
+        createdAt: new Date().toISOString(),
+        channelsSent: { inApp: true, email: true, sms: false, whatsapp: false }
+      },
+      {
+        notificationId: 'notif-2',
+        title: 'Production security active',
+        message: 'Strict Attribute-Based Access Control (ABAC) is enabled. Zero-Trust Firestore rules loaded.',
+        type: 'system',
+        userId: 'all',
+        role: 'Super Admin',
+        status: 'unread',
+        createdAt: new Date().toISOString(),
+        channelsSent: { inApp: true, email: true, sms: true, whatsapp: true }
+      }
+    ],
+    settlements: [
+      {
+        id: 'SETL882190',
+        amount: 25000,
+        bankName: 'State Bank of India',
+        accountHolder: 'Priyanka Sharma',
+        accountNumber: 'XXXXXX4829',
+        ifscCode: 'SBIN0001824',
+        type: 'Bank Settlement',
+        status: 'Approved',
+        operatorId: 'op-3',
+        operatorName: 'Priyanka CSP',
+        adminId: 'op-smartspeatm',
+        approvedBy: 'op-super',
+        approvedByName: 'Vakrangee Super Admin',
+        approvedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
+        remarks: 'Processed via IMPS. Reference: UTIB293182819',
+        createdAt: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
+        timestamp: new Date(Date.now() - 14 * 3600 * 1000).toISOString()
+      },
+      {
+        id: 'SETL882191',
+        amount: 15000,
+        bankName: 'HDFC Bank',
+        accountHolder: 'Suresh Kumar',
+        accountNumber: 'XXXXXX1293',
+        ifscCode: 'HDFC0000281',
+        type: 'Bank Settlement',
+        status: 'Pending',
+        operatorId: 'op-2',
+        operatorName: 'Suresh eMitra',
+        adminId: 'op-smartspeatm',
+        createdAt: new Date().toISOString(),
+        timestamp: new Date().toISOString()
+      }
+    ],
+    activityTimeline: [
+      {
+        id: 'act-1',
+        timestamp: new Date().toISOString(),
+        userId: 'op-super',
+        userName: 'Vakrangee Super Admin',
+        role: 'Super Admin',
+        actionType: 'Login',
+        details: 'Super Admin logged in from secure terminal.',
+        status: 'Success'
+      }
+    ],
+    commissionRules: [
+      {
+        id: 'comm-rule-1',
+        service: 'Withdrawal',
+        targetType: 'All',
+        targetId: 'all',
+        targetName: 'All Users',
+        rateType: 'Percentage',
+        rateValue: 0.5,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        history: []
+      },
+      {
+        id: 'comm-rule-2',
+        service: 'Deposit',
+        targetType: 'All',
+        targetId: 'all',
+        targetName: 'All Users',
+        rateType: 'Percentage',
+        rateValue: 0.2,
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        history: []
+      }
+    ],
     commissionSettings: INITIAL_COMMISSION_SETTINGS
   };
 

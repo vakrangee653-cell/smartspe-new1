@@ -91,7 +91,10 @@ export default function DashboardView({
     return state.customers.filter(c => !c.createdBy || c.createdBy === branchAdminId);
   }, [state.customers, state.operators, currUser]);
 
-  const { wallet } = state;
+  const { wallet, currentUser, operators } = state;
+  const isOperator = currentUser?.role === 'Operator';
+  const activeOp = isOperator ? operators.find(o => o.id === currentUser?.id) : null;
+  const displayBalance = activeOp ? (activeOp.walletBalance ?? activeOp.walletLimit ?? 0) : wallet.balance;
 
   // 1. Calculate stats (Today is June 21, 2026 as per local time metadata)
   const todayStr = '2026-06-21';
@@ -232,7 +235,7 @@ export default function DashboardView({
                 CSP Cash Limit
               </p>
               <h3 className="text-lg md:text-xl font-bold font-display tracking-tight mt-0.5 text-emerald-600 dark:text-emerald-400">
-                {formatINR(wallet.balance)}
+                {formatINR(displayBalance)}
               </h3>
             </div>
           </div>
@@ -506,8 +509,8 @@ export default function DashboardView({
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto max-h-80 pr-1">
-            {transactions.slice(0, 5).map((txn) => (
-              <div key={txn.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+            {transactions.slice(0, 5).map((txn, idx) => (
+              <div key={`${txn.id}-${idx}`} className="py-3 flex items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                     txn.status === 'Success' 
@@ -564,8 +567,8 @@ export default function DashboardView({
           </div>
 
           <div className="divide-y divide-slate-100 dark:divide-slate-800 overflow-y-auto max-h-80 pr-1">
-            {offlineWork.slice(0, 5).map((work) => (
-              <div key={work.id} className="py-3 flex items-center justify-between gap-3 text-xs">
+            {offlineWork.slice(0, 5).map((work, idx) => (
+              <div key={`${work.id}-${idx}`} className="py-3 flex items-center justify-between gap-3 text-xs">
                 <div>
                   <h5 className="font-semibold text-slate-800 dark:text-slate-200">
                     {work.customerName}

@@ -1,8 +1,136 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Default rule: Deny all unauthenticated access and default to deny-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'Super Admin') ||
+        request.auth.token.email == 'vakrangee653@gmail.com' ||
+        request.auth.uid == 'op-super'
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserData().role == 'Admin'
+      );
+    }
+
+    function isSubordinate(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) && (
+        get(/databases/$(database)/documents/users/$(userId)).data.adminId == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(userId)).data.createdBy == request.auth.uid
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.auth.uid == userId ||
+        (isAdmin() && isSubordinate(userId))
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.auth.uid == userId ||
+        (isAdmin() && (request.resource.data.adminId == request.auth.uid || request.resource.data.createdBy == request.auth.uid))
+      );
+      allow update, delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.auth.uid == userId ||
+        (isAdmin() && isSubordinate(userId))
+      );
+    }
+
+    // Wallets Collection
+    match /wallets/{walletId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        walletId == 'main_wallet' ||
+        walletId == 'aeps_wallet' ||
+        walletId == 'emitra_wallet' ||
+        request.auth.uid == walletId ||
+        (isAdmin() && isSubordinate(walletId))
+      );
+      allow write: if isSignedIn() && (
+        isSuperAdmin() ||
+        ((walletId == 'main_wallet' || walletId == 'aeps_wallet' || walletId == 'emitra_wallet') && (isSuperAdmin() || isAdmin())) ||
+        request.auth.uid == walletId ||
+        (isAdmin() && isSubordinate(walletId))
+      );
+    }
+
+    // Transactions Collection
+    match /transactions/{txnId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.adminId == request.auth.uid) ||
+        resource.data.operatorId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.resource.data.operatorId == request.auth.uid ||
+        (isAdmin() && request.resource.data.adminId == request.auth.uid)
+      );
+      allow update, delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.adminId == request.auth.uid) ||
+        resource.data.operatorId == request.auth.uid
+      );
+    }
+
+    // Wallet Ledger Collection
+    match /wallet_ledger/{ledgerId} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.adminId == request.auth.uid) ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.operatorId == request.auth.uid
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.operatorId == request.auth.uid ||
+        (isAdmin() && request.resource.data.adminId == request.auth.uid)
+      );
+      allow update, delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isAdmin() && resource.data.adminId == request.auth.uid) ||
+        resource.data.userId == request.auth.uid ||
+        resource.data.operatorId == request.auth.uid
+      );
+    }
+
+    // Settings Collection
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isSuperAdmin();
+    }
+
+    // Audit Logs Collection
+    match /audit_logs/{logId} {
+      allow read: if isSignedIn() && (isSuperAdmin() || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    // Backward compatibility support for legacy state if any components still use it
     match /user_states/{userId} {
-      allow read, write: if true;
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isSuperAdmin());
     }
   }
 }

@@ -18,6 +18,7 @@ import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { AppState, Operator, SecurityLog, UserRole } from '../types';
 import SmartSpeLogo from './SmartSpeLogo';
+import { useAuth } from '../firebase/AuthProvider';
 
 interface LoginViewProps {
   state: AppState;
@@ -32,6 +33,7 @@ export default function LoginView({
   darkMode,
   setDarkMode
 }: LoginViewProps) {
+  const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
   const [loginMethod, setLoginMethod] = React.useState<'email' | 'phone'>('email');
   const [emailInput, setEmailInput] = React.useState('');
   const [phoneInput, setPhoneInput] = React.useState('');
@@ -187,131 +189,147 @@ export default function LoginView({
       return;
     }
 
-    // Validate Password
-    const correctPassword = operatorMatched.password || 'operator123'; // fallback
-    if (enteredPass !== correctPassword) {
-      // Increase failed attempts
-      const currentFailed = (operatorMatched.failedAttempts || 0) + 1;
-      const isNowLocked = currentFailed >= 3;
+    // Validate Password and Authenticate via Firebase Auth
+    loginWithEmail(operatorMatched.email, enteredPass)
+      .then((cred) => {
+        // Reset failed attempts on success
+        const updatedOperators = state.operators.map(op => {
+          if (op.id === operatorMatched.id) {
+            return {
+              ...op,
+              failedAttempts: 0,
+              isLockedOut: false
+            };
+          }
+          return op;
+        });
 
-      const updatedOperators = state.operators.map(op => {
-        if (op.id === operatorMatched.id) {
-          return {
-            ...op,
-            failedAttempts: currentFailed,
-            isLockedOut: isNowLocked ? true : op.isLockedOut
+        // Direct Login for Operator role
+        if (operatorMatched.role === 'Operator') {
+          const successLog: SecurityLog = {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            operatorId: cred.user.uid,
+            operatorName: operatorMatched.name,
+            role: operatorMatched.role,
+            action: `Direct Operator Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
+            status: 'Success',
+            ipAddress: browserDetails.ip,
+            device: browserDetails.device,
+            browser: browserDetails.browser
           };
+
+          onUpdateState({
+            ...state,
+            operators: updatedOperators,
+            currentUser: {
+              id: cred.user.uid,
+              name: `${operatorMatched.name} (${operatorMatched.role})`,
+              email: operatorMatched.email,
+              role: operatorMatched.role,
+              phoneNumber: operatorMatched.phoneNumber,
+              createdBy: operatorMatched.createdBy
+            },
+            securityLogs: [successLog, ...state.securityLogs]
+          });
+          setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Operator Login)`);
+          return;
         }
-        return op;
-      });
 
-      // Record failed security audit log
-      const failedLog: SecurityLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        operatorId: operatorMatched.id,
-        operatorName: operatorMatched.name,
-        role: operatorMatched.role,
-        action: `Failed Login Step (${currentFailed}/3 Attempts) via ${loginMethod === 'email' ? 'Email' : 'Phone'}`,
-        status: isNowLocked ? 'Blocked' : 'Failed',
-        ipAddress: browserDetails.ip,
-        device: browserDetails.device,
-        browser: browserDetails.browser
-      };
+        // Login Successful for Admins / Super Admins! Intercept to trigger secure Gmail OTP Verification
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        setSessionOtp(code);
+        setActiveOtpFlow('login_otp');
+        setTempLoginOp({
+          ...operatorMatched,
+          id: cred.user.uid
+        });
+        setUserOtpInput('');
+        setSendingOtp(true);
+        setOtpSentMessage('Sending safe verification code to Gmail...');
 
-      onUpdateState({
-        ...state,
-        operators: updatedOperators,
-        securityLogs: [failedLog, ...state.securityLogs]
-      });
-
-      if (isNowLocked) {
-        setErrorMsg('❌ 3 असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after 3 failed login attempts)');
-      } else {
-        setErrorMsg(`❌ गलत पासवर्ड! शेष अवसर: ${3 - currentFailed} (Wrong password. Attempts left: ${3 - currentFailed})`);
-      }
-      return;
-    }
-
-    // Direct Login for Operator role
-    if (operatorMatched.role === 'Operator') {
-      const successLog: SecurityLog = {
-        id: `log-${Date.now()}`,
-        timestamp: new Date().toISOString(),
-        operatorId: operatorMatched.id,
-        operatorName: operatorMatched.name,
-        role: operatorMatched.role,
-        action: `Direct Operator Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'}`,
-        status: 'Success',
-        ipAddress: browserDetails.ip,
-        device: browserDetails.device,
-        browser: browserDetails.browser
-      };
-
-      onUpdateState({
-        ...state,
-        currentUser: {
-          id: operatorMatched.id,
-          name: `${operatorMatched.name} (${operatorMatched.role})`,
-          email: operatorMatched.email,
-          role: operatorMatched.role,
-          phoneNumber: operatorMatched.phoneNumber,
-          createdBy: operatorMatched.createdBy
-        },
-        securityLogs: [successLog, ...state.securityLogs]
-      });
-      setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Operator Login)`);
-      return;
-    }
-
-    // Login Successful for Admins / Super Admins! Intercept to trigger secure Gmail OTP Verification
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setSessionOtp(code);
-    setActiveOtpFlow('login_otp');
-    setTempLoginOp(operatorMatched);
-    setUserOtpInput('');
-    setSendingOtp(true);
-    setOtpSentMessage('Sending safe verification code to Gmail...');
-
-    fetch('/api/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: operatorMatched.email,
-        otp: code,
-        name: operatorMatched.name,
-        context: 'सुरक्षित लॉगिन (Secure Portal Login)'
+        fetch('/api/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: operatorMatched.email,
+            otp: code,
+            name: operatorMatched.name,
+            context: 'सुरक्षित लॉगिन (Secure Portal Login)'
+          })
+        })
+        .then(async res => {
+          const isJson = res.headers.get('content-type')?.includes('application/json');
+          const text = await res.text();
+          if (!res.ok) {
+            throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
+          }
+          if (!isJson) {
+            throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
+          }
+          return JSON.parse(text);
+        })
+        .then(data => {
+          setSendingOtp(false);
+          if (data.success) {
+            if (data.simulated) {
+              setOtpIsSimulated(true);
+              setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
+            } else {
+              setOtpIsSimulated(false);
+              setOtpSentMessage(`📧 OTP successfully sent to secure Gmail: ${operatorMatched.email}`);
+            }
+          } else {
+            setErrorMsg(`❌ OTP sending failed: ${data.error || 'Server SMTP failed'}`);
+          }
+        })
+        .catch(err => {
+          setSendingOtp(false);
+          setErrorMsg(`❌ API Connection Failed: ${err.message}`);
+        });
       })
-    })
-    .then(async res => {
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
-      }
-      if (!isJson) {
-        throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
-      }
-      return JSON.parse(text);
-    })
-    .then(data => {
-      setSendingOtp(false);
-      if (data.success) {
-        if (data.simulated) {
-          setOtpIsSimulated(true);
-          setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
+      .catch((err: any) => {
+        // Increase failed attempts
+        const currentFailed = (operatorMatched.failedAttempts || 0) + 1;
+        const isNowLocked = currentFailed >= 3;
+
+        const updatedOperators = state.operators.map(op => {
+          if (op.id === operatorMatched.id) {
+            return {
+              ...op,
+              failedAttempts: currentFailed,
+              isLockedOut: isNowLocked ? true : op.isLockedOut
+            };
+          }
+          return op;
+        });
+
+        // Record failed security audit log
+        const failedLog: SecurityLog = {
+          id: `log-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          operatorId: operatorMatched.id,
+          operatorName: operatorMatched.name,
+          role: operatorMatched.role,
+          action: `Failed Login Step (${currentFailed}/3 Attempts) via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
+          status: isNowLocked ? 'Blocked' : 'Failed',
+          ipAddress: browserDetails.ip,
+          device: browserDetails.device,
+          browser: browserDetails.browser
+        };
+
+        onUpdateState({
+          ...state,
+          operators: updatedOperators,
+          securityLogs: [failedLog, ...state.securityLogs]
+        });
+
+        if (isNowLocked) {
+          setErrorMsg('❌ 3 असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after 3 failed login attempts)');
         } else {
-          setOtpIsSimulated(false);
-          setOtpSentMessage(`📧 OTP successfully sent to secure Gmail: ${operatorMatched.email}`);
+          setErrorMsg(`❌ गलत पासवर्ड या प्रमाणीकरण त्रुटि! शेष अवसर: ${3 - currentFailed} (Wrong password or authentication error)`);
         }
-      } else {
-        setErrorMsg(`❌ OTP sending failed: ${data.error || 'Server SMTP failed'}`);
-      }
-    })
-    .catch(err => {
-      setSendingOtp(false);
-      setErrorMsg(`❌ API Connection Failed: ${err.message}`);
-    });
+      });
   };
 
   // Preset demo bypass login
@@ -991,32 +1009,48 @@ export default function LoginView({
                           });
                           setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${tempLoginOp.name} (Logged in via Google OTP)`);
                         } else if (activeOtpFlow === 'register_otp' && tempRegisteredOp) {
-                          // Complete registration
-                          onUpdateState({
-                            ...state,
-                            operators: [...state.operators, tempRegisteredOp],
-                            securityLogs: [
-                              {
-                                id: `log-${Date.now()}`,
-                                timestamp: new Date().toISOString(),
-                                operatorId: tempRegisteredOp.id,
-                                operatorName: tempRegisteredOp.name,
-                                role: 'Admin',
-                                action: `Self Admin Registration Verified via Gmail OTP: ${tempRegisteredOp.email}`,
-                                status: 'Success',
-                                ipAddress: browserDetails.ip,
-                                device: browserDetails.device,
-                                browser: browserDetails.browser
-                              },
-                              ...state.securityLogs
-                            ]
+                          // Complete registration via Firebase Auth & Firestore
+                          registerWithEmail(
+                            tempRegisteredOp.email, 
+                            tempRegisteredOp.password || 'operator123', 
+                            tempRegisteredOp.name, 
+                            tempRegisteredOp.phoneNumber, 
+                            'Admin'
+                          )
+                          .then((cred) => {
+                            const registeredOpWithUid = {
+                              ...tempRegisteredOp,
+                              id: cred.user.uid
+                            };
+                            onUpdateState({
+                              ...state,
+                              operators: [...state.operators, registeredOpWithUid],
+                              securityLogs: [
+                                {
+                                  id: `log-${Date.now()}`,
+                                  timestamp: new Date().toISOString(),
+                                  operatorId: cred.user.uid,
+                                  operatorName: tempRegisteredOp.name,
+                                  role: 'Admin',
+                                  action: `Self Admin Registration Verified via Gmail OTP & Firebase Auth Created: ${tempRegisteredOp.email}`,
+                                  status: 'Success',
+                                  ipAddress: browserDetails.ip,
+                                  device: browserDetails.device,
+                                  browser: browserDetails.browser
+                                },
+                                ...state.securityLogs
+                              ]
+                            });
+                            setSuccessMsg('🎉 आपका ईमेल और पासवर्ड सफलतापूर्वक सत्यापित किया गया है! (Account verified and created successfully!)');
+                            setTimeout(() => {
+                              setViewMode('login');
+                              setEmailInput(tempRegisteredOp.email);
+                              setPasswordInput(tempRegisteredOp.password || '');
+                            }, 1500);
+                          })
+                          .catch((err) => {
+                            setErrorMsg(`❌ Firebase Auth Registration Failed: ${err.message}`);
                           });
-                          setSuccessMsg('🎉 आपका ईमेल और पासवर्ड सफलतापूर्वक सत्यापित किया गया है! (Account verified and created successfully!)');
-                          setTimeout(() => {
-                            setViewMode('login');
-                            setEmailInput(tempRegisteredOp.email);
-                            setPasswordInput(tempRegisteredOp.password || '');
-                          }, 1500);
                         }
 
                         // Close security view

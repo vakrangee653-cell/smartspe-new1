@@ -388,9 +388,9 @@ export default function OfflineView({
 
             {/* Offline file workflow cards (NOT simple tables, bento layout blocks are more interactive!) */}
             <div className="space-y-4 max-h-165 overflow-y-auto pr-1">
-              {filteredWork.map((item) => (
+              {filteredWork.map((item, idx) => (
                 <div 
-                  key={item.id}
+                  key={`${item.id}-${idx}`}
                   className={`p-4 rounded-2xl border transition-all duration-300 space-y-3 relative group ${
                     item.status === 'Delivered' 
                       ? 'bg-slate-50/50 dark:bg-slate-950/20 opacity-75 border-slate-200 dark:border-slate-800/60' 

@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { AppState } from '../types';
 import { formatINR, formatDateNice, exportToCSV, triggerPrint } from '../utils';
+import * as XLSX from 'xlsx';
 
 interface ReportsViewProps {
   state: AppState;
@@ -78,7 +79,7 @@ export default function ReportsView({
   }, [state.customers, state.operators, currUser]);
 
   // Active report category filter
-  const [reportTab, setReportTab] = React.useState<'all_with_mobile' | 'banking' | 'emitra' | 'offline'>('all_with_mobile');
+  const [reportTab, setReportTab] = React.useState<'all_with_mobile' | 'banking' | 'emitra' | 'offline' | 'daily' | 'monthly' | 'ledger' | 'operator'>('all_with_mobile');
   const [searchFilter, setSearchFilter] = React.useState('');
 
   // Heuristic lookup for citizen mobile number
@@ -239,10 +240,183 @@ export default function ReportsView({
     return filtered.sort((a, b) => b.receivedDate.localeCompare(a.receivedDate));
   }, [offlineWork, searchFilter]);
 
-  // CSV Export trigger
+  // Option 5: Daily Report Data
+  const dailyReportData = React.useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const list = [
+      ...transactions.filter(t => (t.timestamp || t.date || '').startsWith(todayStr)).map(t => ({
+        id: t.id,
+        timestamp: t.timestamp,
+        customerName: t.customerName,
+        type: t.type,
+        amount: t.amount,
+        fee: t.fee,
+        commission: t.commission,
+        status: t.status,
+        operatorName: t.operatorName,
+        source: 'Banking' as const
+      })),
+      ...emitraApplications.filter(a => (a.appliedDate || '').startsWith(todayStr)).map(a => ({
+        id: a.id || a.tokenNumber,
+        timestamp: a.appliedDate,
+        customerName: a.applicantName,
+        type: `eMitra - ${a.serviceType}`,
+        amount: a.feeCharged,
+        fee: 0,
+        commission: a.commissionEarned,
+        status: a.status,
+        operatorName: 'Suresh Kumar',
+        source: 'eMitra' as const
+      })),
+      ...offlineWork.filter(w => (w.receivedDate || '').startsWith(todayStr)).map(w => ({
+        id: w.id,
+        timestamp: w.receivedDate,
+        customerName: w.customerName,
+        type: `Offline - ${w.serviceType || 'Service'}`,
+        amount: w.totalCharged || 0,
+        fee: 0,
+        commission: w.commissionEarned || 0,
+        status: w.status,
+        operatorName: 'Operator Hub',
+        source: 'Offline' as const
+      }))
+    ];
+
+    const filtered = list.filter(item => {
+      const query = searchFilter.toLowerCase();
+      return (
+        item.customerName.toLowerCase().includes(query) ||
+        item.type.toLowerCase().includes(query) ||
+        item.operatorName.toLowerCase().includes(query)
+      );
+    });
+
+    return filtered.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [transactions, emitraApplications, offlineWork, searchFilter]);
+
+  // Option 6: Monthly Report Data
+  const monthlyReportData = React.useMemo(() => {
+    const currentMonthStr = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+    
+    const list = [
+      ...transactions.filter(t => (t.timestamp || t.date || '').startsWith(currentMonthStr)).map(t => ({
+        id: t.id,
+        timestamp: t.timestamp,
+        customerName: t.customerName,
+        type: t.type,
+        amount: t.amount,
+        fee: t.fee,
+        commission: t.commission,
+        status: t.status,
+        operatorName: t.operatorName,
+        source: 'Banking' as const
+      })),
+      ...emitraApplications.filter(a => (a.appliedDate || '').startsWith(currentMonthStr)).map(a => ({
+        id: a.id || a.tokenNumber,
+        timestamp: a.appliedDate,
+        customerName: a.applicantName,
+        type: `eMitra - ${a.serviceType}`,
+        amount: a.feeCharged,
+        fee: 0,
+        commission: a.commissionEarned,
+        status: a.status,
+        operatorName: 'Suresh Kumar',
+        source: 'eMitra' as const
+      })),
+      ...offlineWork.filter(w => (w.receivedDate || '').startsWith(currentMonthStr)).map(w => ({
+        id: w.id,
+        timestamp: w.receivedDate,
+        customerName: w.customerName,
+        type: `Offline - ${w.serviceType || 'Service'}`,
+        amount: w.totalCharged || 0,
+        fee: 0,
+        commission: w.commissionEarned || 0,
+        status: w.status,
+        operatorName: 'Operator Hub',
+        source: 'Offline' as const
+      }))
+    ];
+
+    const filtered = list.filter(item => {
+      const query = searchFilter.toLowerCase();
+      return (
+        item.customerName.toLowerCase().includes(query) ||
+        item.type.toLowerCase().includes(query) ||
+        item.operatorName.toLowerCase().includes(query)
+      );
+    });
+
+    return filtered.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [transactions, emitraApplications, offlineWork, searchFilter]);
+
+  // Option 7: Wallet Ledger Data
+  const ledgerReportData = React.useMemo(() => {
+    const list = state.walletLedger || [];
+    
+    const filtered = list.filter(item => {
+      const query = searchFilter.toLowerCase();
+      return (
+        item.service.toLowerCase().includes(query) ||
+        item.userName.toLowerCase().includes(query) ||
+        item.transactionId.toLowerCase().includes(query)
+      );
+    });
+
+    return filtered.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  }, [state.walletLedger, searchFilter]);
+
+  // Option 8: Operator Performance Data
+  const operatorPerformanceData = React.useMemo(() => {
+    const ops = state.operators || [];
+    const summaryList = ops.map(op => {
+      const opTxns = transactions.filter(t => t.operatorId === op.id);
+      const opEmitra = emitraApplications.filter(a => a.operatorId === op.id);
+      const opOffline = offlineWork.filter(w => w.operatorId === op.id);
+
+      const totalBankingVol = opTxns.reduce((acc, t) => acc + (t.status === 'Success' ? t.amount : 0), 0);
+      const totalBankingComm = opTxns.reduce((acc, t) => acc + (t.status === 'Success' ? t.commission : 0), 0);
+
+      const totalEmitraVol = opEmitra.reduce((acc, a) => acc + (a.status === 'Completed' ? a.feeCharged : 0), 0);
+      const totalEmitraComm = opEmitra.reduce((acc, a) => acc + (a.status === 'Completed' ? a.commissionEarned : 0), 0);
+
+      const totalOfflineVol = opOffline.reduce((acc, w) => acc + (w.status === 'Delivered' ? (w.totalCharged || 0) : 0), 0);
+      const totalOfflineComm = opOffline.reduce((acc, w) => acc + (w.status === 'Delivered' ? (w.commissionEarned || 0) : 0), 0);
+
+      const totalTransactionsCount = opTxns.length + opEmitra.length + opOffline.length;
+      const cumulativeCommission = totalBankingComm + totalEmitraComm + totalOfflineComm;
+
+      return {
+        id: op.id,
+        name: op.name,
+        role: op.role,
+        status: op.status,
+        bankingCount: opTxns.length,
+        bankingVolume: totalBankingVol,
+        emitraCount: opEmitra.length,
+        emitraVolume: totalEmitraVol,
+        offlineCount: opOffline.length,
+        offlineVolume: totalOfflineVol,
+        totalCount: totalTransactionsCount,
+        totalCommission: cumulativeCommission
+      };
+    });
+
+    const query = searchFilter.toLowerCase();
+    return summaryList.filter(item => 
+      item.name.toLowerCase().includes(query) || 
+      item.role.toLowerCase().includes(query) || 
+      item.status.toLowerCase().includes(query)
+    );
+  }, [state.operators, transactions, emitraApplications, offlineWork, searchFilter]);
+
+  // Excel (.xlsx) / CSV Export trigger
   const handleCSVExport = () => {
+    let cleanData: any[] = [];
+    let filename = '';
+
     if (reportTab === 'all_with_mobile') {
-      const cleanData = allReportWithMobileData.map(row => ({
+      cleanData = allReportWithMobileData.map(row => ({
         'Date & Time': formatDateNice(row.date),
         'Customer Name': row.name,
         'Mobile Number': row.contact,
@@ -253,9 +427,9 @@ export default function ReportsView({
         'Status': row.status,
         'Desk Operator': row.operator
       }));
-      exportToCSV(cleanData, 'SmartSPE_Consolidated_All_Report_With_Mobile');
+      filename = 'SmartSPE_Consolidated_All_Report_With_Mobile';
     } else if (reportTab === 'banking') {
-      const cleanData = bankingReportData.map(row => ({
+      cleanData = bankingReportData.map(row => ({
         'Txn ID': row.id,
         'Timestamp': formatDateNice(row.timestamp),
         'Customer Name': row.customerName,
@@ -269,9 +443,9 @@ export default function ReportsView({
         'Status': row.status,
         'Desk Operator': row.operatorName
       }));
-      exportToCSV(cleanData, 'SmartSPE_Banking_Services_Report');
+      filename = 'SmartSPE_Banking_Services_Report';
     } else if (reportTab === 'emitra') {
-      const cleanData = emitraReportData.map(row => ({
+      cleanData = emitraReportData.map(row => ({
         'Token Number': row.tokenNumber,
         'Applied Date': formatDateNice(row.appliedDate),
         'Applicant Name': row.applicantName,
@@ -283,9 +457,9 @@ export default function ReportsView({
         'Application Status': row.status,
         'Supporting Notes': row.notes || ''
       }));
-      exportToCSV(cleanData, 'SmartSPE_eMitra_Services_Report');
+      filename = 'SmartSPE_eMitra_Services_Report';
     } else if (reportTab === 'offline') {
-      const cleanData = offlineReportData.map(row => ({
+      cleanData = offlineReportData.map(row => ({
         'File ID': row.id,
         'Received Date': formatDateNice(row.receivedDate),
         'Customer Name': row.customerName,
@@ -297,7 +471,76 @@ export default function ReportsView({
         'Work Status': row.status,
         'Target Delivery Date': row.deliveryDate ? formatDateNice(row.deliveryDate) : 'Not specified'
       }));
-      exportToCSV(cleanData, 'SmartSPE_Offline_Jobs_Report');
+      filename = 'SmartSPE_Offline_Jobs_Report';
+    } else if (reportTab === 'daily') {
+      cleanData = dailyReportData.map(row => ({
+        'Txn ID / Ref': row.id,
+        'Timestamp': formatDateNice(row.timestamp),
+        'Customer Name': row.customerName,
+        'Primary Service': row.serviceType,
+        'Amount (INR)': row.amount,
+        'Commission Earned': row.commission,
+        'Status': row.status,
+        'Recorded By': row.operatorName
+      }));
+      filename = `SmartSPE_Daily_Report_${new Date().toISOString().split('T')[0]}`;
+    } else if (reportTab === 'monthly') {
+      cleanData = monthlyReportData.map(row => ({
+        'Txn ID / Ref': row.id,
+        'Timestamp': formatDateNice(row.timestamp),
+        'Customer Name': row.customerName,
+        'Primary Service': row.serviceType,
+        'Amount (INR)': row.amount,
+        'Commission Earned': row.commission,
+        'Status': row.status,
+        'Recorded By': row.operatorName
+      }));
+      filename = `SmartSPE_Monthly_Report_${new Date().getFullYear()}_${new Date().getMonth() + 1}`;
+    } else if (reportTab === 'ledger') {
+      cleanData = ledgerReportData.map(row => ({
+        'Ledger ID': row.id,
+        'Timestamp': formatDateNice(row.timestamp),
+        'Details': row.remarks || row.action,
+        'Amount': row.amount,
+        'Opening Balance': row.openingBalance,
+        'Closing Balance': row.closingBalance,
+        'Type': row.type,
+        'Created By': row.operatorName
+      }));
+      filename = 'SmartSPE_Wallet_Ledger_Report';
+    } else if (reportTab === 'operator') {
+      cleanData = operatorPerformanceData.map(row => ({
+        'Operator Name': row.name,
+        'Role / Designation': row.role,
+        'Banking Transactions': row.bankingCount,
+        'Banking Volume': row.bankingVolume,
+        'eMitra Applications': row.emitraCount,
+        'eMitra Volume': row.emitraVolume,
+        'Offline Tasks': row.offlineCount,
+        'Offline Volume': row.offlineVolume,
+        'Total Combined Volume': row.totalVolume,
+        'Total Commission Earned': row.totalCommission,
+        'Account Status': row.status
+      }));
+      filename = 'SmartSPE_Operator_Performance_Report';
+    }
+
+    if (!cleanData || cleanData.length === 0) {
+      alert("No data available to export for this selection.");
+      return;
+    }
+
+    try {
+      // Create Sheet
+      const worksheet = XLSX.utils.json_to_sheet(cleanData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
+      
+      // Write Spreadsheet File (.xlsx)
+      XLSX.writeFile(workbook, `${filename}.xlsx`);
+    } catch (err) {
+      console.error("Failed to generate Excel file, falling back to CSV", err);
+      exportToCSV(cleanData, filename);
     }
   };
 
@@ -422,7 +665,7 @@ export default function ReportsView({
               }`}
             >
               <Smartphone size={14} />
-              <span>1. All Report with Mobile No. / सम्पूर्ण विवरण</span>
+              <span>All with Mobile</span>
             </button>
             <button
               onClick={() => { setReportTab('banking'); setSearchFilter(''); }}
@@ -433,7 +676,7 @@ export default function ReportsView({
               }`}
             >
               <Landmark size={14} />
-              <span>2. Banking Service Report / बैंकिंग सेवा</span>
+              <span>Banking</span>
             </button>
             <button
               onClick={() => { setReportTab('emitra'); setSearchFilter(''); }}
@@ -444,7 +687,7 @@ export default function ReportsView({
               }`}
             >
               <FileText size={14} />
-              <span>3. eMitra Report / ई-मित्र सेवा</span>
+              <span>eMitra</span>
             </button>
             <button
               onClick={() => { setReportTab('offline'); setSearchFilter(''); }}
@@ -455,7 +698,51 @@ export default function ReportsView({
               }`}
             >
               <Layers size={14} />
-              <span>4. Offline Work Report / ऑफलाइन कार्य</span>
+              <span>Offline</span>
+            </button>
+            <button
+              onClick={() => { setReportTab('daily'); setSearchFilter(''); }}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1 ${
+                reportTab === 'daily' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <Calendar size={14} />
+              <span>Daily Report</span>
+            </button>
+            <button
+              onClick={() => { setReportTab('monthly'); setSearchFilter(''); }}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1 ${
+                reportTab === 'monthly' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <Calendar size={14} />
+              <span>Monthly Report</span>
+            </button>
+            <button
+              onClick={() => { setReportTab('ledger'); setSearchFilter(''); }}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1 ${
+                reportTab === 'ledger' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <Wallet size={14} />
+              <span>Wallet Ledger</span>
+            </button>
+            <button
+              onClick={() => { setReportTab('operator'); setSearchFilter(''); }}
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1 ${
+                reportTab === 'operator' 
+                  ? 'bg-blue-600 text-white shadow-xs' 
+                  : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <TrendingUp size={14} />
+              <span>Operator Perf.</span>
             </button>
           </div>
 
@@ -573,8 +860,8 @@ export default function ReportsView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
-                  {bankingReportData.map(row => (
-                    <tr key={row.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
+                  {bankingReportData.map((row, idx) => (
+                    <tr key={`${row.id}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
                       <td className="py-3 px-3 whitespace-nowrap">
                         <div className="font-mono font-bold text-slate-800 dark:text-slate-100">{row.id}</div>
                         <div className="text-[9px] text-slate-400 font-mono">{formatDateNice(row.timestamp)}</div>
@@ -634,8 +921,8 @@ export default function ReportsView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
-                  {emitraReportData.map(row => (
-                    <tr key={row.tokenNumber} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
+                  {emitraReportData.map((row, idx) => (
+                    <tr key={`${row.tokenNumber}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
                       <td className="py-3 px-3 whitespace-nowrap">
                         <div className="font-mono font-bold text-slate-800 dark:text-slate-100">#{row.tokenNumber}</div>
                         <div className="text-[9px] text-slate-400 font-mono">{formatDateNice(row.appliedDate)}</div>
@@ -695,8 +982,8 @@ export default function ReportsView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
-                  {offlineReportData.map(row => (
-                    <tr key={row.id} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
+                  {offlineReportData.map((row, idx) => (
+                    <tr key={`${row.id}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
                       <td className="py-3 px-3 whitespace-nowrap">
                         <div className="font-mono font-bold text-slate-850 dark:text-slate-100">{row.id}</div>
                         <div className="text-[9px] text-slate-400 font-mono">{formatDateNice(row.receivedDate)}</div>
@@ -731,6 +1018,269 @@ export default function ReportsView({
                   {offlineReportData.length === 0 && (
                     <tr>
                       <td colSpan={9} className="text-center py-10 text-slate-400 italic">No offline dossiers captured matching criteria.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Format 5: Daily Report */}
+          {reportTab === 'daily' && (
+            <div className="min-w-full inline-block align-middle">
+              <div className="mb-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg flex items-center justify-between text-xs font-medium text-blue-700 dark:text-blue-300 font-sans">
+                <span>📅 Showing today's operational summaries and detailed live filings.</span>
+                <span className="font-mono text-[10px] bg-blue-500/20 px-2 py-0.5 rounded text-blue-800 dark:text-blue-100 font-bold uppercase">
+                  {dailyReportData.length} entries today
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse min-w-220 font-sans">
+                <thead>
+                  <tr className="border-b border-dashed border-slate-200 dark:border-slate-800 text-[10px] font-mono uppercase text-slate-400 bg-slate-50 dark:bg-slate-950/40">
+                    <th className="py-3 px-3">Date & Time</th>
+                    <th className="py-3 px-3">Customer Name</th>
+                    <th className="py-3 px-3">Type</th>
+                    <th className="py-3 px-3">Department</th>
+                    <th className="py-3 px-3 text-right font-semibold">Volume</th>
+                    <th className="py-3 px-3 text-right">Filing Charge</th>
+                    <th className="py-3 px-3 text-right text-emerald-500 font-bold">Commission</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3">Operator</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                  {dailyReportData.map((row, idx) => (
+                    <tr key={`${row.id}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
+                      <td className="py-3 px-3 whitespace-nowrap font-mono text-[10px]">
+                        {formatDateNice(row.timestamp)}
+                      </td>
+                      <td className="py-3 px-3 font-semibold dark:text-white whitespace-nowrap">{row.customerName}</td>
+                      <td className="py-3 px-3 font-medium whitespace-nowrap">{row.type}</td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                          row.source === 'Banking'
+                            ? 'bg-blue-500/10 text-blue-600'
+                            : row.source === 'eMitra'
+                              ? 'bg-purple-500/10 text-purple-600'
+                              : 'bg-amber-500/10 text-amber-600'
+                        }`}>
+                          {row.source}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold dark:text-white whitespace-nowrap">{formatINR(row.amount)}</td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-400 whitespace-nowrap">{formatINR(row.fee)}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500 whitespace-nowrap">+{formatINR(row.commission)}</td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          row.status === 'Success' || row.status === 'Completed' || row.status === 'Delivered'
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : 'bg-orange-500/10 text-orange-600'
+                        }`}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{row.operatorName}</td>
+                    </tr>
+                  ))}
+                  {dailyReportData.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-10 text-slate-400 italic font-sans">No transactions executed today.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Format 6: Monthly Report */}
+          {reportTab === 'monthly' && (
+            <div className="min-w-full inline-block align-middle">
+              <div className="mb-2 p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-between text-xs font-medium text-indigo-700 dark:text-indigo-300 font-sans">
+                <span>📅 Showing calendar month's cumulative performance indices and files.</span>
+                <span className="font-mono text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-800 dark:text-indigo-100 font-bold uppercase">
+                  {monthlyReportData.length} entries this month
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse min-w-220 font-sans">
+                <thead>
+                  <tr className="border-b border-dashed border-slate-200 dark:border-slate-800 text-[10px] font-mono uppercase text-slate-400 bg-slate-50 dark:bg-slate-950/40">
+                    <th className="py-3 px-3">Date & Time</th>
+                    <th className="py-3 px-3">Customer Name</th>
+                    <th className="py-3 px-3">Type</th>
+                    <th className="py-3 px-3">Department</th>
+                    <th className="py-3 px-3 text-right font-semibold">Volume</th>
+                    <th className="py-3 px-3 text-right">Filing Charge</th>
+                    <th className="py-3 px-3 text-right text-emerald-500 font-bold">Commission</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3">Operator</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                  {monthlyReportData.map((row, idx) => (
+                    <tr key={`${row.id}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all">
+                      <td className="py-3 px-3 whitespace-nowrap font-mono text-[10px]">
+                        {formatDateNice(row.timestamp)}
+                      </td>
+                      <td className="py-3 px-3 font-semibold dark:text-white whitespace-nowrap">{row.customerName}</td>
+                      <td className="py-3 px-3 font-medium whitespace-nowrap">{row.type}</td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                          row.source === 'Banking'
+                            ? 'bg-blue-500/10 text-blue-600'
+                            : row.source === 'eMitra'
+                              ? 'bg-purple-500/10 text-purple-600'
+                              : 'bg-amber-500/10 text-amber-600'
+                        }`}>
+                          {row.source}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold dark:text-white whitespace-nowrap">{formatINR(row.amount)}</td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-400 whitespace-nowrap">{formatINR(row.fee)}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-emerald-500 whitespace-nowrap">+{formatINR(row.commission)}</td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                          row.status === 'Success' || row.status === 'Completed' || row.status === 'Delivered'
+                            ? 'bg-emerald-500/10 text-emerald-600'
+                            : 'bg-orange-500/10 text-orange-600'
+                        }`}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-500 whitespace-nowrap">{row.operatorName}</td>
+                    </tr>
+                  ))}
+                  {monthlyReportData.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-10 text-slate-400 italic font-sans">No transactions executed in this billing cycle.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Format 7: Wallet Ledger */}
+          {reportTab === 'ledger' && (
+            <div className="min-w-full inline-block align-middle">
+              <div className="mb-2 p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg flex items-center justify-between text-xs font-medium text-emerald-700 dark:text-emerald-300 font-sans font-sans">
+                <span>💼 real-time dual-entry double-balance audit trails. Every transaction debits or credits with precision.</span>
+                <span className="font-mono text-[10px] bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-800 dark:text-emerald-100 font-bold uppercase">
+                  {ledgerReportData.length} audit entries
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse min-w-220">
+                <thead>
+                  <tr className="border-b border-dashed border-slate-200 dark:border-slate-800 text-[10px] font-mono uppercase text-slate-400 bg-slate-50 dark:bg-slate-950/40">
+                    <th className="py-3 px-3">Date & Time</th>
+                    <th className="py-3 px-3">Reference / Service</th>
+                    <th className="py-3 px-3 text-right">Opening Bal</th>
+                    <th className="py-3 px-3 text-right text-emerald-500">Credit (+)</th>
+                    <th className="py-3 px-3 text-right text-rose-500">Debit (-)</th>
+                    <th className="py-3 px-3 text-right">Closing Bal</th>
+                    <th className="py-3 px-3 text-right font-bold text-blue-500">Available Bal</th>
+                    <th className="py-3 px-3">User (Op/Admin)</th>
+                    <th className="py-3 px-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                  {ledgerReportData.map((row, idx) => (
+                    <tr key={`${row.id || row.transactionId}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all font-mono">
+                      <td className="py-3 px-3 whitespace-nowrap text-[10px]">
+                        {formatDateNice(row.timestamp)}
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <div className="font-bold text-slate-900 dark:text-white text-xs">{row.service}</div>
+                        <div className="text-[10px] text-slate-400">{row.transactionId}</div>
+                      </td>
+                      <td className="py-3 px-3 text-right text-slate-500 whitespace-nowrap">{formatINR(row.openingBalance)}</td>
+                      <td className="py-3 px-3 text-right text-emerald-500 font-bold whitespace-nowrap">
+                        {row.credit > 0 ? `+${formatINR(row.credit)}` : '-'}
+                      </td>
+                      <td className="py-3 px-3 text-right text-rose-500 font-bold whitespace-nowrap">
+                        {row.debit > 0 ? `-${formatINR(row.debit)}` : '-'}
+                      </td>
+                      <td className="py-3 px-3 text-right text-slate-800 dark:text-slate-200 font-semibold whitespace-nowrap">{formatINR(row.closingBalance)}</td>
+                      <td className="py-3 px-3 text-right text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap">{formatINR(row.availableBalance)}</td>
+                      <td className="py-3 px-3 text-slate-500 font-sans whitespace-nowrap">{row.userName} ({row.operatorId})</td>
+                      <td className="py-3 px-3 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-sans font-bold ${
+                          row.status === 'Success' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                        }`}>
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {ledgerReportData.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="text-center py-10 text-slate-400 italic font-sans font-sans">No ledger entries recorded yet. Execute transactions to view journal entries.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Format 8: Operator Performance */}
+          {reportTab === 'operator' && (
+            <div className="min-w-full inline-block align-middle font-sans">
+              <div className="mb-2 p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg flex items-center justify-between text-xs font-medium text-purple-700 dark:text-purple-300 font-sans font-sans">
+                <span>📈 Showing productivity, volume outputs, and cumulative commissions earned per operator.</span>
+                <span className="font-mono text-[10px] bg-purple-500/20 px-2 py-0.5 rounded text-purple-800 dark:text-purple-100 font-bold uppercase">
+                  {operatorPerformanceData.length} operators active
+                </span>
+              </div>
+              <table className="w-full text-left border-collapse min-w-220">
+                <thead>
+                  <tr className="border-b border-dashed border-slate-200 dark:border-slate-800 text-[10px] font-mono uppercase text-slate-400 bg-slate-50 dark:bg-slate-950/40">
+                    <th className="py-3 px-3">Operator Name</th>
+                    <th className="py-3 px-3">Role</th>
+                    <th className="py-3 px-3 text-center">Banking Count / Volume</th>
+                    <th className="py-3 px-3 text-center">eMitra Count / Volume</th>
+                    <th className="py-3 px-3 text-center">Offline Count / Volume</th>
+                    <th className="py-3 px-3 text-center">Total Files</th>
+                    <th className="py-3 px-3 text-right text-emerald-500 font-bold">Total Commission</th>
+                    <th className="py-3 px-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-xs text-slate-700 dark:text-slate-300">
+                  {operatorPerformanceData.map((row, idx) => (
+                    <tr key={`${row.id}-${idx}`} className="hover:bg-slate-50/20 dark:hover:bg-slate-800/20 transition-all font-sans">
+                      <td className="py-3 px-3 whitespace-nowrap font-bold text-slate-900 dark:text-white">
+                        {row.name}
+                        <div className="text-[9px] text-slate-400 font-mono font-sans">ID: {row.id}</div>
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap font-medium text-slate-500">{row.role}</td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap font-mono">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{row.bankingCount} txns</span>
+                        <div className="text-[10px] text-slate-400">{formatINR(row.bankingVolume)}</div>
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap font-mono">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{row.emitraCount} apps</span>
+                        <div className="text-[10px] text-slate-400">{formatINR(row.emitraVolume)}</div>
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap font-mono">
+                        <span className="font-bold text-slate-800 dark:text-slate-200">{row.offlineCount} jobs</span>
+                        <div className="text-[10px] text-slate-400">{formatINR(row.offlineVolume)}</div>
+                      </td>
+                      <td className="py-3 px-3 text-center whitespace-nowrap font-mono font-bold text-indigo-600 dark:text-indigo-400 font-sans">
+                        {row.totalCount}
+                      </td>
+                      <td className="py-3 px-3 text-right whitespace-nowrap font-mono font-bold text-emerald-500">
+                        {formatINR(row.totalCommission)}
+                      </td>
+                      <td className="py-3 px-3 whitespace-nowrap font-sans">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                          row.status === 'Active' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'
+                        }`}>
+                          {row.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {operatorPerformanceData.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="text-center py-10 text-slate-400 italic">No operators enrolled matching description.</td>
                     </tr>
                   )}
                 </tbody>

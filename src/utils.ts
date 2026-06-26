@@ -12,6 +12,17 @@ export const formatINR = (amount: number): string => {
   }).format(amount);
 };
 
+export function deduplicateById<T extends { id: string }>(arr: T[]): T[] {
+  if (!Array.isArray(arr)) return [];
+  const seen = new Set<string>();
+  return arr.filter(item => {
+    if (!item || !item.id) return false;
+    const isDup = seen.has(item.id);
+    seen.add(item.id);
+    return !isDup;
+  });
+}
+
 // Simple relative date formatting (e.g., "3 hours ago")
 export const formatRelativeTime = (isoString: string): string => {
   const now = new Date();

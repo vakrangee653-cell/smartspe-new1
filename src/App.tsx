@@ -33,11 +33,21 @@ import {
   Menu,
   ShieldAlert
 } from 'lucide-react';
-import { formatINR } from './utils';
+import { formatINR, deduplicateById } from './utils';
 
 export const metadata = {
   title: "SmartSPE - CSC Management Software",
   description: "CSC Management & Billing Software"
+};
+
+const getCanonicalDocId = (id: string, email?: string): string => {
+  const e = (email || '').toLowerCase().trim();
+  if (e === 'vakrangee653@gmail.com' || id === 'op-super') return 'op-super';
+  if (e === 'rajendra.spe@gmail.com' || id === 'op-1') return 'op-1';
+  if (e === 'smartspeatm@gmail.com' || id === 'op-smartspeatm') return 'op-smartspeatm';
+  if (e === 'suresh.emitra@gmail.com' || id === 'op-2') return 'op-2';
+  if (e === 'priyanka.csp@gmail.com' || id === 'op-3') return 'op-3';
+  return id;
 };
 
 export default function App() {
@@ -67,7 +77,7 @@ export default function App() {
       setFirebaseLoading(true);
       try {
         console.log('[App] Initial Sync - Fetching central operator registry...');
-        const centralState = await getStateFromFirestore('shared_shop_state');
+        const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
         if (centralState) {
           setState(prev => {
             let loadedOperators = centralState.operators || prev.operators;
@@ -132,15 +142,30 @@ export default function App() {
         const role: UserRole = (email.includes('admin') || email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin';
         
         setState(prev => {
+          const existingOp = prev.operators.find(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
+          
+          let resolvedRole: UserRole = role;
+          let resolvedCreatedBy: string | undefined = undefined;
+          let resolvedName = firebaseUser.displayName || 'Vakrangee Operator';
+          let resolvedPhone = firebaseUser.phoneNumber || '+91 99999 55555';
+          
+          if (existingOp) {
+            resolvedRole = existingOp.role;
+            resolvedCreatedBy = existingOp.createdBy;
+            if (existingOp.name) resolvedName = existingOp.name;
+            if (existingOp.phoneNumber) resolvedPhone = existingOp.phoneNumber;
+          }
+
           const updatedUser = {
             id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Vakrangee Operator',
+            name: resolvedName,
             email: email,
-            role: role,
-            phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555'
+            role: resolvedRole,
+            phoneNumber: resolvedPhone,
+            ...(resolvedCreatedBy ? { createdBy: resolvedCreatedBy } : {})
           };
           
-          const exists = prev.operators.some(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
+          const exists = !!existingOp;
           let updatedOperators = [...prev.operators];
           
           if (!exists) {
@@ -160,7 +185,7 @@ export default function App() {
             });
           } else {
             updatedOperators = updatedOperators.map(op => {
-              if (op.email.toLowerCase() === email) {
+              if (op.email.toLowerCase() === email || op.id === firebaseUser.uid) {
                 return { 
                   ...op, 
                   id: firebaseUser.uid,
@@ -213,13 +238,242 @@ export default function App() {
       
       const isSuper = state.currentUser.role === 'Super Admin';
       
+      // 1. Resolve and run automated migration check for any Google UID documents to canonical ones
+      try {
+        console.log('[App] Running Google UID document migration checks...');
+        for (const op of state.operators) {
+          const canonicalId = getCanonicalDocId(op.id, op.email);
+          if (canonicalId !== op.id) {
+            // This is a Google UID document! Check if it has any active data
+            const personalDocId = `shop_state_${op.id}`;
+            const personalData = await getStateFromFirestore(personalDocId);
+            
+            if (personalData && !personalData.migrated_to_canonical && (
+              (personalData.transactions && personalData.transactions.length > 0) ||
+              (personalData.emitraApplications && personalData.emitraApplications.length > 0) ||
+              (personalData.offlineWork && personalData.offlineWork.length > 0) ||
+              (personalData.customers && personalData.customers.length > 0)
+            )) {
+              console.log(`[App] Google UID Migration: Found data in ${personalDocId}. Migrating to canonical document shop_state_${canonicalId}...`);
+              
+              const canonicalDocId = `shop_state_${canonicalId}`;
+              const canonicalData = await getStateFromFirestore(canonicalDocId) || {
+                shopDetails: state.shopDetails,
+                wallet: state.wallet,
+                aepsWallet: state.aepsWallet,
+                emitraWallet: state.emitraWallet,
+                customers: [],
+                transactions: [],
+                emitraApplications: [],
+                offlineWork: [],
+                expenses: [],
+              };
+              
+              // Transactions merge
+              const canonicalTxns = canonicalData.transactions || [];
+              const personalTxns = personalData.transactions || [];
+              const mergedTxns = [...canonicalTxns];
+              for (const tx of personalTxns) {
+                if (!mergedTxns.some((t: any) => t.id === tx.id)) {
+                  mergedTxns.push({
+                    ...tx,
+                    operatorId: op.id,
+                    operatorName: op.name,
+                    createdBy: canonicalId
+                  });
+                }
+              }
+              canonicalData.transactions = mergedTxns;
+
+              // eMitra apps merge
+              const canonicalApps = canonicalData.emitraApplications || [];
+              const personalApps = personalData.emitraApplications || [];
+              const mergedApps = [...canonicalApps];
+              for (const app of personalApps) {
+                if (!mergedApps.some((a: any) => a.id === app.id)) {
+                  mergedApps.push({
+                    ...app,
+                    operatorId: op.id,
+                    operatorName: op.name,
+                    createdBy: canonicalId
+                  });
+                }
+              }
+              canonicalData.emitraApplications = mergedApps;
+
+              // Offline Register merge
+              const canonicalWork = canonicalData.offlineWork || [];
+              const personalWork = personalData.offlineWork || [];
+              const mergedWork = [...canonicalWork];
+              for (const w of personalWork) {
+                if (!mergedWork.some((work: any) => work.id === w.id)) {
+                  mergedWork.push({
+                    ...w,
+                    operatorId: op.id,
+                    operatorName: op.name,
+                    createdBy: canonicalId
+                  });
+                }
+              }
+              canonicalData.offlineWork = mergedWork;
+
+              // Customers merge
+              const canonicalCusts = canonicalData.customers || [];
+              const personalCusts = personalData.customers || [];
+              const mergedCusts = [...canonicalCusts];
+              for (const c of personalCusts) {
+                if (!mergedCusts.some((cust: any) => cust.id === c.id)) {
+                  mergedCusts.push({
+                    ...c,
+                    createdBy: canonicalId
+                  });
+                }
+              }
+              canonicalData.customers = mergedCusts;
+
+              // Save canonical merged state
+              await saveStateToFirestore(canonicalDocId, canonicalData);
+              
+              // Mark the google uid document as migrated
+              personalData.migrated_to_canonical = true;
+              personalData.migrated = true;
+              await saveStateToFirestore(personalDocId, personalData);
+              console.log(`[App] Google UID Migration completed successfully for ${op.email}`);
+            }
+          }
+        }
+      } catch (migrateErr) {
+        console.error('[App] Google UID migration run failed:', migrateErr);
+      }
+
       if (isSuper) {
+        // Super Admin Self-Healing & Data Recovery Checks
+        try {
+          console.log('[App] Super Admin Self-Healing: Running active recovery checks...');
+          const operatorsToCheck = state.operators;
+          for (const op of operatorsToCheck) {
+            if (op.id === 'op-super' || op.role === 'Super Admin') continue;
+            
+            // Check for any accidental/isolated data in op's personal state doc
+            const docIds = [op.id];
+            // If they are Naresh, check their email too just in case
+            if (op.email.toLowerCase() === 'nareshsuthar249@gmail.com') {
+              docIds.push('nareshsuthar249@gmail.com');
+            }
+            
+            for (const docId of docIds) {
+              const personalDocId = `shop_state_${docId}`;
+              const personalData = await getStateFromFirestore(personalDocId);
+              
+              if (personalData && !personalData.recovered_to_super && (
+                (personalData.transactions && personalData.transactions.length > 0) ||
+                (personalData.emitraApplications && personalData.emitraApplications.length > 0) ||
+                (personalData.offlineWork && personalData.offlineWork.length > 0) ||
+                (personalData.customers && personalData.customers.length > 0)
+              )) {
+                const targetAdminId = op.createdBy || 'op-super';
+                console.log(`[App] Super Admin Self-Healing: Found entries in ${personalDocId}. Recovering to ${targetAdminId}...`);
+                
+                const targetData = await getStateFromFirestore(`shop_state_${targetAdminId}`) || {
+                  shopDetails: state.shopDetails,
+                  wallet: state.wallet,
+                  aepsWallet: state.aepsWallet,
+                  emitraWallet: state.emitraWallet,
+                  customers: [],
+                  transactions: [],
+                  emitraApplications: [],
+                  offlineWork: [],
+                  expenses: [],
+                };
+                
+                // 1. Transactions merge
+                const targetTxns = targetData.transactions || [];
+                const personalTxns = personalData.transactions || [];
+                const mergedTxns = [...targetTxns];
+                let txMergedCount = 0;
+                for (const tx of personalTxns) {
+                  if (!mergedTxns.some((t: any) => t.id === tx.id)) {
+                    mergedTxns.push({
+                      ...tx,
+                      operatorId: op.id,
+                      operatorName: op.name,
+                      createdBy: targetAdminId
+                    });
+                    txMergedCount++;
+                  }
+                }
+                targetData.transactions = mergedTxns;
+
+                // 2. eMitra apps merge
+                const targetApps = targetData.emitraApplications || [];
+                const personalApps = personalData.emitraApplications || [];
+                const mergedApps = [...targetApps];
+                let appMergedCount = 0;
+                for (const app of personalApps) {
+                  if (!mergedApps.some((a: any) => a.id === app.id)) {
+                    mergedApps.push({
+                      ...app,
+                      operatorId: op.id,
+                      operatorName: op.name,
+                      createdBy: targetAdminId
+                    });
+                    appMergedCount++;
+                  }
+                }
+                targetData.emitraApplications = mergedApps;
+
+                // 3. Offline Register merge
+                const targetWork = targetData.offlineWork || [];
+                const personalWork = personalData.offlineWork || [];
+                const mergedWork = [...targetWork];
+                let workMergedCount = 0;
+                for (const w of personalWork) {
+                  if (!mergedWork.some((work: any) => work.id === w.id)) {
+                    mergedWork.push({
+                      ...w,
+                      operatorId: op.id,
+                      operatorName: op.name,
+                      createdBy: targetAdminId
+                    });
+                    workMergedCount++;
+                  }
+                }
+                targetData.offlineWork = mergedWork;
+
+                // 4. Customers merge
+                const targetCusts = targetData.customers || [];
+                const personalCusts = personalData.customers || [];
+                const mergedCusts = [...targetCusts];
+                for (const c of personalCusts) {
+                  if (!mergedCusts.some((cust: any) => cust.id === c.id)) {
+                    mergedCusts.push({
+                      ...c,
+                      createdBy: targetAdminId
+                    });
+                  }
+                }
+                targetData.customers = mergedCusts;
+
+                // Save merged state
+                await saveStateToFirestore(`shop_state_${targetAdminId}`, targetData);
+                
+                // Mark as recovered
+                personalData.recovered_to_super = true;
+                await saveStateToFirestore(personalDocId, personalData);
+                console.log(`[App] Super Admin Self-Healing: Restored ${txMergedCount} txs, ${appMergedCount} apps, ${workMergedCount} offline items for ${op.email}`);
+              }
+            }
+          }
+        } catch (recoverErr) {
+          console.error('[App] Super Admin recovery run failed:', recoverErr);
+        }
+
         if (selectedBranchId === 'all') {
           console.log('[App] Super Admin - Fetching and aggregating ALL branches...');
           setFirebaseLoading(true);
           try {
-            // Get all registered Admins in the network
-            const admins = state.operators.filter(op => op.role === 'Admin');
+            // Get all registered Admins and Super Admin in the network to aggregate ALL branches
+            const admins = state.operators.filter(op => op.role === 'Admin' || op.role === 'Super Admin');
             
             // If there are no admins yet, load op-super as default or empty
             if (admins.length === 0) {
@@ -245,7 +499,8 @@ export default function App() {
             // Fetch states for all Admins
             const fetchedStates = await Promise.all(
               admins.map(async (admin) => {
-                const data = await getStateFromFirestore(`shop_state_${admin.id}`);
+                const docId = getCanonicalDocId(admin.id, admin.email);
+                const data = await getStateFromFirestore(`shop_state_${docId}`, 'Admin', admin.id);
                 return { adminId: admin.id, data };
               })
             );
@@ -269,19 +524,24 @@ export default function App() {
             let aggOfflineWork: any[] = [];
             let aggExpenses: any[] = [];
             
-            validStates.forEach(({ data }) => {
-              if (data.wallet) {
-                aggWalletBalance += Number(data.wallet.balance || 0);
-                aggWithdrawnCommission += Number(data.wallet.withdrawnCommission || 0);
-                aggTotalCommissionEarned += Number(data.wallet.totalCommissionEarned || 0);
+            validStates.forEach(({ adminId, data }) => {
+              // Only sum wallet balances of non-Super Admin branches to avoid doubling
+              const isSuperAdmin = state.operators.find(o => o.id === adminId)?.role === 'Super Admin';
+              if (!isSuperAdmin) {
+                if (data.wallet) {
+                  aggWalletBalance += Number(data.wallet.balance || 0);
+                  aggWithdrawnCommission += Number(data.wallet.withdrawnCommission || 0);
+                  aggTotalCommissionEarned += Number(data.wallet.totalCommissionEarned || 0);
+                }
+                if (data.aepsWallet) {
+                  aggAepsOnlineBalance += Number(data.aepsWallet.onlineBalance || 0);
+                  aggAepsPhysicalBalance += Number(data.aepsWallet.physicalBalance || 0);
+                }
+                if (data.emitraWallet) {
+                  aggEmitraWalletBalance += Number(data.emitraWallet.balance || 0);
+                }
               }
-              if (data.aepsWallet) {
-                aggAepsOnlineBalance += Number(data.aepsWallet.onlineBalance || 0);
-                aggAepsPhysicalBalance += Number(data.aepsWallet.physicalBalance || 0);
-              }
-              if (data.emitraWallet) {
-                aggEmitraWalletBalance += Number(data.emitraWallet.balance || 0);
-              }
+              
               if (Array.isArray(data.customers)) {
                 aggCustomers = [...aggCustomers, ...data.customers];
               }
@@ -299,7 +559,7 @@ export default function App() {
               }
             });
             
-            // Remove duplicates for customers (by id or phone)
+            // Remove duplicates for customers (by id)
             const seenCust = new Set();
             const uniqueCustomers = aggCustomers.filter(c => {
               if (!c?.id) return false;
@@ -308,11 +568,44 @@ export default function App() {
               return !duplicate;
             });
 
+            // Remove duplicates for transactions, applications, offlineWork, and expenses by ID
+            const seenTx = new Set();
+            const uniqueTransactions = aggTransactions.filter(t => {
+              if (!t?.id) return false;
+              const duplicate = seenTx.has(t.id);
+              seenTx.add(t.id);
+              return !duplicate;
+            });
+
+            const seenApp = new Set();
+            const uniqueApps = aggEmitraApplications.filter(a => {
+              if (!a?.id) return false;
+              const duplicate = seenApp.has(a.id);
+              seenApp.add(a.id);
+              return !duplicate;
+            });
+
+            const seenWork = new Set();
+            const uniqueWork = aggOfflineWork.filter(w => {
+              if (!w?.id) return false;
+              const duplicate = seenWork.has(w.id);
+              seenWork.add(w.id);
+              return !duplicate;
+            });
+
+            const seenExpense = new Set();
+            const uniqueExpenses = aggExpenses.filter(e => {
+              if (!e?.id) return false;
+              const duplicate = seenExpense.has(e.id);
+              seenExpense.add(e.id);
+              return !duplicate;
+            });
+
             // Sort lists by timestamp desc or date desc to keep them organized
-            aggTransactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-            aggEmitraApplications.sort((a, b) => new Date(b.submittedDate).getTime() - new Date(a.submittedDate).getTime());
-            aggOfflineWork.sort((a, b) => new Date(b.receivedDate).getTime() - new Date(a.receivedDate).getTime());
-            aggExpenses.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            uniqueTransactions.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            uniqueApps.sort((a, b) => new Date(b.submittedDate || b.appliedDate).getTime() - new Date(a.submittedDate || a.appliedDate).getTime());
+            uniqueWork.sort((a, b) => new Date(b.receivedDate).getTime() - new Date(a.receivedDate).getTime());
+            uniqueExpenses.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
             
             setState(prev => {
               const merged = {
@@ -333,10 +626,10 @@ export default function App() {
                   lastUpdated: new Date().toISOString()
                 },
                 customers: uniqueCustomers,
-                transactions: aggTransactions,
-                emitraApplications: aggEmitraApplications,
-                offlineWork: aggOfflineWork,
-                expenses: aggExpenses,
+                transactions: uniqueTransactions,
+                emitraApplications: uniqueApps,
+                offlineWork: uniqueWork,
+                expenses: uniqueExpenses,
               };
               saveState(merged);
               return merged;
@@ -349,10 +642,11 @@ export default function App() {
           }
         } else {
           // Fetch specific branch data
-          console.log(`[App] Super Admin - Fetching branch data for Admin: ${selectedBranchId}`);
+          const canonicalBranchId = getCanonicalDocId(selectedBranchId, state.operators.find(o => o.id === selectedBranchId)?.email);
+          console.log(`[App] Super Admin - Fetching branch data for Admin: ${selectedBranchId} (resolved: ${canonicalBranchId})`);
           setFirebaseLoading(true);
           try {
-            const isolatedData = await getStateFromFirestore(`shop_state_${selectedBranchId}`);
+            const isolatedData = await getStateFromFirestore(`shop_state_${canonicalBranchId}`, 'Admin', selectedBranchId);
             if (isolatedData) {
               setState(prev => {
                 const merged = {
@@ -361,17 +655,17 @@ export default function App() {
                   wallet: isolatedData.wallet || prev.wallet,
                   aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
                   emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
-                  customers: isolatedData.customers || prev.customers,
-                  transactions: isolatedData.transactions || prev.transactions,
-                  emitraApplications: isolatedData.emitraApplications || prev.emitraApplications,
-                  offlineWork: isolatedData.offlineWork || prev.offlineWork,
-                  expenses: isolatedData.expenses || prev.expenses,
+                  customers: deduplicateById(isolatedData.customers || prev.customers),
+                  transactions: deduplicateById(isolatedData.transactions || prev.transactions),
+                  emitraApplications: deduplicateById(isolatedData.emitraApplications || prev.emitraApplications),
+                  offlineWork: deduplicateById(isolatedData.offlineWork || prev.offlineWork),
+                  expenses: deduplicateById(isolatedData.expenses || prev.expenses),
                 };
                 saveState(merged);
                 return merged;
               });
             } else {
-              console.log(`[App] Selected branch state not found for admin ${selectedBranchId}, using standard templates.`);
+              console.log(`[App] Selected branch state not found for admin ${selectedBranchId} (resolved: ${canonicalBranchId}), using standard templates.`);
             }
           } catch (err) {
             console.error('[App] Failed to load selected branch state:', err);
@@ -381,14 +675,121 @@ export default function App() {
         }
       } else {
         // Normal Admin or Operator isolated loading
-        const adminId = state.currentUser.role === 'Operator'
+        const rawAdminId = state.currentUser.role === 'Operator'
           ? (state.currentUser.createdBy || 'op-1')
           : state.currentUser.id;
+          
+        const matchedOp = state.operators.find(o => o.id === rawAdminId);
+        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || state.currentUser.email);
           
         console.log(`[App] Current user is ${state.currentUser.role}. Branch Admin ID resolved: ${adminId}`);
         setFirebaseLoading(true);
         try {
-          const isolatedData = await getStateFromFirestore(`shop_state_${adminId}`);
+          // Self-Healing: Check if an operator has data in their own personal state from before
+          let personalDataToMerge: any = null;
+          if (state.currentUser.role === 'Operator') {
+            const personalDocId = `shop_state_${state.currentUser.id}`;
+            try {
+              const personalData = await getStateFromFirestore(personalDocId);
+              if (personalData && !personalData.migrated && (
+                (personalData.transactions && personalData.transactions.length > 0) ||
+                (personalData.emitraApplications && personalData.emitraApplications.length > 0) ||
+                (personalData.offlineWork && personalData.offlineWork.length > 0) ||
+                (personalData.customers && personalData.customers.length > 0)
+              )) {
+                console.log(`[App] Self-Healing: Found accidental isolated data in ${personalDocId}. Migrating to ${adminId}...`);
+                personalDataToMerge = personalData;
+              }
+            } catch (pErr) {
+              console.error('[App] Failed checking personal data for migration:', pErr);
+            }
+          }
+
+          let isolatedData = await getStateFromFirestore(`shop_state_${adminId}`, state.currentUser.role, state.currentUser.id);
+          
+          if (personalDataToMerge) {
+            // We need to merge!
+            if (!isolatedData) {
+              isolatedData = {
+                shopDetails: state.shopDetails,
+                wallet: state.wallet,
+                aepsWallet: state.aepsWallet,
+                emitraWallet: state.emitraWallet,
+                customers: [],
+                transactions: [],
+                emitraApplications: [],
+                offlineWork: [],
+                expenses: [],
+              };
+            }
+
+            // Transactions merge
+            const existingTxns = isolatedData.transactions || [];
+            const personalTxns = personalDataToMerge.transactions || [];
+            const mergedTxns = [...existingTxns];
+            for (const tx of personalTxns) {
+              if (!mergedTxns.some((t: any) => t.id === tx.id)) {
+                mergedTxns.push({
+                  ...tx,
+                  operatorId: state.currentUser.id,
+                  createdBy: adminId
+                });
+              }
+            }
+            isolatedData.transactions = mergedTxns;
+
+            // eMitra apps merge
+            const existingApps = isolatedData.emitraApplications || [];
+            const personalApps = personalDataToMerge.emitraApplications || [];
+            const mergedApps = [...existingApps];
+            for (const app of personalApps) {
+              if (!mergedApps.some((a: any) => a.id === app.id)) {
+                mergedApps.push({
+                  ...app,
+                  operatorId: state.currentUser.id,
+                  createdBy: adminId
+                });
+              }
+            }
+            isolatedData.emitraApplications = mergedApps;
+
+            // Offline Register merge
+            const existingWork = isolatedData.offlineWork || [];
+            const personalWork = personalDataToMerge.offlineWork || [];
+            const mergedWork = [...existingWork];
+            for (const w of personalWork) {
+              if (!mergedWork.some((work: any) => work.id === w.id)) {
+                mergedWork.push({
+                  ...w,
+                  operatorId: state.currentUser.id,
+                  createdBy: adminId
+                });
+              }
+            }
+            isolatedData.offlineWork = mergedWork;
+
+            // Customers merge
+            const existingCusts = isolatedData.customers || [];
+            const personalCusts = personalDataToMerge.customers || [];
+            const mergedCusts = [...existingCusts];
+            for (const c of personalCusts) {
+              if (!mergedCusts.some((cust: any) => cust.id === c.id)) {
+                mergedCusts.push({
+                  ...c,
+                  createdBy: adminId
+                });
+              }
+            }
+            isolatedData.customers = mergedCusts;
+
+            // Save the merged data to the correct Admin/Branch document
+            await saveStateToFirestore(`shop_state_${adminId}`, isolatedData);
+
+            // Mark personal document as migrated
+            await saveStateToFirestore(`shop_state_${state.currentUser.id}`, { migrated: true });
+            console.log('[App] Self-Healing migration completed successfully!');
+          }
+
           if (isolatedData) {
             setState(prev => {
               const merged = {
@@ -397,11 +798,11 @@ export default function App() {
                 wallet: isolatedData.wallet || prev.wallet,
                 aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
                 emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
-                customers: isolatedData.customers || prev.customers,
-                transactions: isolatedData.transactions || prev.transactions,
-                emitraApplications: isolatedData.emitraApplications || prev.emitraApplications,
-                offlineWork: isolatedData.offlineWork || prev.offlineWork,
-                expenses: isolatedData.expenses || prev.expenses,
+                customers: deduplicateById(isolatedData.customers || prev.customers),
+                transactions: deduplicateById(isolatedData.transactions || prev.transactions),
+                emitraApplications: deduplicateById(isolatedData.emitraApplications || prev.emitraApplications),
+                offlineWork: deduplicateById(isolatedData.offlineWork || prev.offlineWork),
+                expenses: deduplicateById(isolatedData.expenses || prev.expenses),
               };
               saveState(merged);
               return merged;
@@ -431,18 +832,36 @@ export default function App() {
     };
 
     syncIsolatedState();
-  }, [state.currentUser?.id, selectedBranchId, state.operators.length]);
+  }, [state.currentUser?.id, selectedBranchId, JSON.stringify(state.operators.map(o => ({ id: o.id, email: o.email, role: o.role })))]);
 
   // Synchronize state changes to localStorage and cloud Firestore
-  const handleUpdateState = (newState: AppState) => {
+  const handleUpdateState = (rawNewState: AppState) => {
+    // Proactively clean duplicates from arrays
+    const newState: AppState = {
+      ...rawNewState,
+      customers: deduplicateById(rawNewState.customers || []),
+      transactions: deduplicateById(rawNewState.transactions || []),
+      emitraApplications: deduplicateById(rawNewState.emitraApplications || []),
+      offlineWork: deduplicateById(rawNewState.offlineWork || []),
+      expenses: deduplicateById(rawNewState.expenses || []),
+      notifications: rawNewState.notifications ? rawNewState.notifications.filter((v, i, a) => a.findIndex(t => t.notificationId === v.notificationId) === i) : [],
+      settlements: deduplicateById(rawNewState.settlements || []),
+      activityTimeline: deduplicateById(rawNewState.activityTimeline || []),
+      commissionRules: deduplicateById(rawNewState.commissionRules || [])
+    };
+
     setState(newState);
     saveState(newState);
     
-    // 1. Save global/shared data (operators list, security logs, and central commission settings) to the central shared document
+    // 1. Save global/shared data (operators list, security logs, central settings, and new collections) to the central shared document
     const centralData = {
       operators: newState.operators,
       securityLogs: newState.securityLogs,
-      commissionSettings: newState.commissionSettings
+      commissionSettings: newState.commissionSettings,
+      notifications: newState.notifications,
+      settlements: newState.settlements,
+      activityTimeline: newState.activityTimeline,
+      commissionRules: newState.commissionRules
     };
     saveStateToFirestore('shared_shop_state', centralData);
 
@@ -454,6 +873,8 @@ export default function App() {
         // If Super Admin selected a specific branch, they save changes to THAT branch's document!
         // (If they are in 'all' view, saving is blocked or saves to 'op-super' to protect data)
         if (selectedBranchId !== 'all') {
+          const matchedOp = newState.operators.find(o => o.id === selectedBranchId);
+          const canonicalBranchId = getCanonicalDocId(selectedBranchId, matchedOp?.email);
           const isolatedData = {
             shopDetails: newState.shopDetails,
             wallet: newState.wallet,
@@ -466,7 +887,7 @@ export default function App() {
             expenses: newState.expenses,
             commissionSettings: newState.commissionSettings
           };
-          saveStateToFirestore(`shop_state_${selectedBranchId}`, isolatedData);
+          saveStateToFirestore(`shop_state_${canonicalBranchId}`, isolatedData);
         } else {
           // Standard backup for Super Admin's personal root file
           const isolatedData = {
@@ -484,9 +905,12 @@ export default function App() {
           saveStateToFirestore('shop_state_op-super', isolatedData);
         }
       } else {
-        const adminId = newState.currentUser.role === 'Operator'
+        const rawAdminId = newState.currentUser.role === 'Operator'
           ? (newState.currentUser.createdBy || 'op-1')
           : newState.currentUser.id;
+
+        const matchedOp = newState.operators.find(o => o.id === rawAdminId);
+        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || newState.currentUser.email);
 
         const isolatedData = {
           shopDetails: newState.shopDetails,
@@ -530,6 +954,29 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [darkMode]);
+
+  // Route and Role Security Check
+  React.useEffect(() => {
+    if (!state.currentUser) return;
+    
+    const role = state.currentUser.role;
+    
+    // Valid roles check
+    if (role !== 'Super Admin' && role !== 'Admin' && role !== 'Operator') {
+      console.warn('[Route Security] Invalid role:', role, '- Redirecting to logout');
+      handleLogout();
+      return;
+    }
+    
+    // Operator access restrictions
+    if (role === 'Operator') {
+      const forbiddenTabsForOperator = ['security', 'admin'];
+      if (forbiddenTabsForOperator.includes(activeTab)) {
+        console.warn(`[Route Security] Operator tried to access forbidden tab: ${activeTab}. Redirecting to dashboard.`);
+        setActiveTab('dashboard');
+      }
+    }
+  }, [activeTab, state.currentUser?.role]);
 
   // Real-time ticking clock
   React.useEffect(() => {
@@ -602,6 +1049,16 @@ export default function App() {
 
     return todayTxnsComm + todayEmitrasComm + todayOfflineComm;
   }, [state.transactions, state.emitraApplications, state.offlineWork, state.currentUser]);
+
+  const resolvedWalletBalance = React.useMemo(() => {
+    if (state.currentUser?.role === 'Operator') {
+      const activeOp = state.operators.find(op => op.id === state.currentUser?.id);
+      if (activeOp) {
+        return activeOp.walletBalance ?? activeOp.walletLimit ?? 0;
+      }
+    }
+    return state.wallet.balance;
+  }, [state.wallet.balance, state.currentUser, state.operators]);
 
   // Render view router based on selected menu tab
   const renderTabContent = () => {
@@ -829,7 +1286,7 @@ export default function App() {
         darkMode={darkMode}
         setDarkMode={setDarkMode}
         currentUser={state.currentUser}
-        walletBalance={state.wallet.balance}
+        walletBalance={resolvedWalletBalance}
         totalCommission={state.wallet.totalCommissionEarned}
         todayCommission={todayCommission}
         onLogout={handleLogout}

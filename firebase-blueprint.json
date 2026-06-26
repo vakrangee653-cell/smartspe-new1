@@ -1,25 +1,130 @@
 {
-  "collections": {
-    "user_states": {
-      "description": "Stores user-specific application state (AppState) for data persistence across sessions.",
-      "documents": {
-        "{userId}": {
-          "schema": {
-            "currentUser": "object",
-            "wallet": "object",
-            "aepsWallet": "object",
-            "emitraWallet": "object",
-            "operators": "array",
-            "customers": "array",
-            "transactions": "array",
-            "emitraApplications": "array",
-            "offlineWork": "array",
-            "securityLogs": "array",
-            "expenses": "array",
-            "commissionSettings": "object"
-          }
-        }
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account information and roles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["Super Admin", "Admin", "Operator"] },
+        "status": { "type": "string", "enum": ["Active", "Inactive"] },
+        "phoneNumber": { "type": "string" },
+        "walletLimit": { "type": "number" },
+        "commissionRate": { "type": "number" },
+        "failedAttempts": { "type": "number" },
+        "isLockedOut": { "type": "boolean" },
+        "createdBy": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "Wallet": {
+      "title": "Wallet State",
+      "description": "Information about wallet balance",
+      "type": "object",
+      "properties": {
+        "balance": { "type": "number" },
+        "withdrawnCommission": { "type": "number" },
+        "totalCommissionEarned": { "type": "number" },
+        "lastUpdated": { "type": "string" }
       }
+    },
+    "Transaction": {
+      "title": "Transaction Log",
+      "description": "A financial transaction record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "customerName": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "status": { "type": "string" }
+      }
+    },
+    "Report": {
+      "title": "Report Document",
+      "description": "A generated report document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "data": { "type": "object" }
+      }
+    },
+    "Settings": {
+      "title": "Settings Configuration",
+      "description": "Configuration settings for commission and shop details",
+      "type": "object",
+      "properties": {
+        "shopDetails": { "type": "object" },
+        "commissionSettings": { "type": "object" }
+      }
+    },
+    "AuditLog": {
+      "title": "Audit Log",
+      "description": "A log of user security and operation actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "operatorName": { "type": "string" },
+        "action": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "WalletLedger": {
+      "title": "Wallet Ledger Entry",
+      "description": "Ledger records of all wallet transactions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "role": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "service": { "type": "string" },
+        "openingBalance": { "type": "number" },
+        "credit": { "type": "number" },
+        "debit": { "type": "number" },
+        "closingBalance": { "type": "number" },
+        "availableBalance": { "type": "number" },
+        "status": { "type": "string" },
+        "operatorId": { "type": "string" },
+        "adminId": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "User",
+      "description": "Collection of all system user profiles"
+    },
+    "wallets": {
+      "schema": "Wallet",
+      "description": "Collection of wallet states"
+    },
+    "wallet_ledger": {
+      "schema": "WalletLedger",
+      "description": "Collection of wallet transaction ledger entries"
+    },
+    "transactions": {
+      "schema": "Transaction",
+      "description": "Collection of financial transaction logs"
+    },
+    "reports": {
+      "schema": "Report",
+      "description": "Collection of system and financial reports"
+    },
+    "settings": {
+      "schema": "Settings",
+      "description": "Collection of configurations and parameters"
+    },
+    "audit_logs": {
+      "schema": "AuditLog",
+      "description": "Collection of system security audit logs"
     }
   }
 }
