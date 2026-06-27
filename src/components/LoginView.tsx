@@ -215,89 +215,35 @@ export default function LoginView({
           return op;
         });
 
-        // Direct Login for Operator role
-        if (operatorMatched.role === 'Operator') {
-          const successLog: SecurityLog = {
-            id: `log-${Date.now()}`,
-            timestamp: new Date().toISOString(),
-            operatorId: cred.user.uid,
-            operatorName: operatorMatched.name,
-            role: operatorMatched.role,
-            action: `Direct Operator Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
-            status: 'Success',
-            ipAddress: browserDetails.ip,
-            device: browserDetails.device,
-            browser: browserDetails.browser
-          };
+        // Direct Login for Operator, Admin, and Super Admin roles
+        const successLog: SecurityLog = {
+          id: `log-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          operatorId: cred.user.uid,
+          operatorName: operatorMatched.name,
+          role: operatorMatched.role,
+          action: `Direct Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
+          status: 'Success',
+          ipAddress: browserDetails.ip,
+          device: browserDetails.device,
+          browser: browserDetails.browser
+        };
 
-          onUpdateState({
-            ...state,
-            operators: updatedOperators,
-            currentUser: {
-              id: cred.user.uid,
-              name: `${operatorMatched.name} (${operatorMatched.role})`,
-              email: operatorMatched.email,
-              role: operatorMatched.role,
-              phoneNumber: operatorMatched.phoneNumber,
-              createdBy: operatorMatched.createdBy
-            },
-            securityLogs: [successLog, ...state.securityLogs]
-          });
-          setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Operator Login)`);
-          return;
-        }
-
-        // Login Successful for Admins / Super Admins! Intercept to trigger secure Gmail OTP Verification
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        setSessionOtp(code);
-        setActiveOtpFlow('login_otp');
-        setTempLoginOp({
-          ...operatorMatched,
-          id: cred.user.uid
-        });
-        setUserOtpInput('');
-        setSendingOtp(true);
-        setOtpSentMessage('Sending safe verification code to Gmail...');
-
-        fetch('/api/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        onUpdateState({
+          ...state,
+          operators: updatedOperators,
+          currentUser: {
+            id: cred.user.uid,
+            name: `${operatorMatched.name} (${operatorMatched.role})`,
             email: operatorMatched.email,
-            otp: code,
-            name: operatorMatched.name,
-            context: 'सुरक्षित लॉगिन (Secure Portal Login)'
-          })
-        })
-        .then(async res => {
-          const isJson = res.headers.get('content-type')?.includes('application/json');
-          const text = await res.text();
-          if (!res.ok) {
-            throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
-          }
-          if (!isJson) {
-            throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
-          }
-          return JSON.parse(text);
-        })
-        .then(data => {
-          setSendingOtp(false);
-          if (data.success) {
-            if (data.simulated) {
-              setOtpIsSimulated(true);
-              setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
-            } else {
-              setOtpIsSimulated(false);
-              setOtpSentMessage(`📧 OTP successfully sent to secure Gmail: ${operatorMatched.email}`);
-            }
-          } else {
-            setErrorMsg(`❌ OTP sending failed: ${data.error || 'Server SMTP failed'}`);
-          }
-        })
-        .catch(err => {
-          setSendingOtp(false);
-          setErrorMsg(`❌ API Connection Failed: ${err.message}`);
+            role: operatorMatched.role,
+            phoneNumber: operatorMatched.phoneNumber,
+            createdBy: operatorMatched.createdBy
+          },
+          securityLogs: [successLog, ...state.securityLogs]
         });
+        setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Login)`);
+        return;
       })
       .catch((err: any) => {
         // Increase failed attempts
@@ -426,7 +372,7 @@ export default function LoginView({
       return;
     }
 
-    // Create new Operator but don't save yet - verify email via OTP first
+    // Create new Operator
     const newOpId = `op-${Math.random().toString(36).substring(2, 8)}`;
     const newOperator: Operator = {
       id: newOpId,
@@ -442,53 +388,54 @@ export default function LoginView({
       isLockedOut: false
     };
 
-    // Registration Successful, but let's trigger the registration secure OTP verification via Gmail!
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setSessionOtp(code);
-    setActiveOtpFlow('register_otp');
-    setTempRegisteredOp(newOperator);
-    setUserOtpInput('');
     setSendingOtp(true);
-    setOtpSentMessage('Generating smart registration lock key...');
+    setErrorMsg('');
+    setSuccessMsg('पंजीकरण प्रक्रिया शुरू हो रही है... (Initiating registration...)');
 
-    fetch('/api/send-otp', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: trimmedEmail,
-        otp: code,
-        name: trimmedName,
-        context: 'नया एडमिन पंजीकरण (New Admin Registration)'
-      })
-    })
-    .then(async res => {
-      const isJson = res.headers.get('content-type')?.includes('application/json');
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(`Server Error (${res.status}): ${text.substring(0, 100)}`);
-      }
-      if (!isJson) {
-        throw new Error(`Invalid Response Format (Non-JSON): ${text.substring(0, 100)}`);
-      }
-      return JSON.parse(text);
-    })
-    .then(data => {
+    registerWithEmail(
+      trimmedEmail,
+      pass,
+      trimmedName,
+      trimmedPhone,
+      'Admin'
+    )
+    .then((cred) => {
+      const registeredOpWithUid = {
+        ...newOperator,
+        id: cred.user.uid
+      };
+      
+      onUpdateState({
+        ...state,
+        operators: [...state.operators, registeredOpWithUid],
+        securityLogs: [
+          {
+            id: `log-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            operatorId: cred.user.uid,
+            operatorName: trimmedName,
+            role: 'Admin',
+            action: `Self Admin Registration Completed: ${trimmedEmail}`,
+            status: 'Success',
+            ipAddress: browserDetails.ip,
+            device: browserDetails.device,
+            browser: browserDetails.browser
+          },
+          ...state.securityLogs
+        ]
+      });
+
       setSendingOtp(false);
-      if (data.success) {
-        if (data.simulated) {
-          setOtpIsSimulated(true);
-          setOtpSentMessage(`📦 Simulated OTP (Console Mode): ${code}`);
-        } else {
-          setOtpIsSimulated(false);
-          setOtpSentMessage(`📧 Registration OTP sent safely to Gmail: ${trimmedEmail}`);
-        }
-      } else {
-        setErrorMsg(`❌ OTP sending failed: ${data.error}`);
-      }
+      setSuccessMsg('🎉 पंजीकरण सफल! अब आप लॉगिन कर सकते हैं। (Registration successful! You can now log in)');
+      setTimeout(() => {
+        setViewMode('login');
+        setEmailInput(trimmedEmail);
+        setPasswordInput(pass);
+      }, 1500);
     })
-    .catch(err => {
+    .catch((err: any) => {
       setSendingOtp(false);
-      setErrorMsg(`❌ Register API Connection Failed: ${err.message}`);
+      setErrorMsg(`❌ पंजीकरण विफल (Registration Failed): ${err.message}`);
     });
 
     // Clear registration fields
@@ -598,10 +545,8 @@ export default function LoginView({
 
                           if (match) {
                             setFoundOperator(match);
-                            // Generate random 6-digit secure verification OTP code
-                            const code = Math.floor(100000 + Math.random() * 900000).toString();
-                            setGeneratedOtp(code);
-                            setIsOtpVerified(false);
+                            setIsOtpVerified(true);
+                            setGeneratedOtp('');
                             setRecoveryOtpInput('');
                             setOtpError('');
                           } else {
