@@ -88,31 +88,30 @@ export default function App() {
         try {
           const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
           if (centralState) {
-            freshOperators = (centralState.operators || []).filter((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
-            if (freshOperators.length === 0) {
-              freshOperators = [
-                {
-                  id: 'op-super',
-                  name: 'Vakrangee Super Admin',
-                  email: 'vakrangee653@gmail.com',
-                  role: 'Super Admin',
-                  status: 'Active',
-                  walletLimit: 1000000,
-                  commissionRate: 100,
-                  phoneNumber: '+91 90010 12345',
-                  password: 'superadmin123',
-                  failedAttempts: 0,
-                  isLockedOut: false,
-                  createdBy: 'System'
-                }
-              ];
+            freshOperators = centralState.operators || [];
+            const hasSuperAdmin = freshOperators.some((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
+            if (!hasSuperAdmin) {
+              freshOperators.push({
+                id: 'op-super',
+                name: 'Vakrangee Super Admin',
+                email: 'vakrangee653@gmail.com',
+                role: 'Super Admin',
+                status: 'Active',
+                walletLimit: 1000000,
+                commissionRate: 100,
+                phoneNumber: '+91 90010 12345',
+                password: 'superadmin123',
+                failedAttempts: 0,
+                isLockedOut: false,
+                createdBy: 'System'
+              });
             }
             freshSettings = centralState.commissionSettings;
             freshLogs = centralState.securityLogs || [];
           } else {
             // Seed default if centralState does not exist
             const defaultState = getInitialState();
-            freshOperators = defaultState.operators.filter((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
+            freshOperators = defaultState.operators;
             freshSettings = defaultState.commissionSettings;
             freshLogs = defaultState.securityLogs;
             await saveStateToFirestore('shared_shop_state', {

@@ -153,11 +153,11 @@ export async function fetchUsersFromFirestore(userRole?: string, userId?: string
       }
     }
 
-    // Filter list to only keep the super admin (vakrangee653@gmail.com)
-    const filteredList = list.filter(item => item && item.email && item.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
+    // Ensure the super admin (vakrangee653@gmail.com) is in the list
+    const hasSuperAdmin = list.some(item => item && item.email && item.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
     
-    if (filteredList.length === 0) {
-      filteredList.push({
+    if (!hasSuperAdmin) {
+      list.push({
         id: 'op-super',
         name: 'Vakrangee Super Admin',
         email: 'vakrangee653@gmail.com',
@@ -173,7 +173,7 @@ export async function fetchUsersFromFirestore(userRole?: string, userId?: string
       });
     }
 
-    return filteredList;
+    return list;
   } catch (err) {
     console.error('[Firestore] Error fetching users with server filtering:', err);
     return [];
