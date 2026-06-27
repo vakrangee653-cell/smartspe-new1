@@ -175,8 +175,9 @@ export default function LoginView({
       return;
     }
 
-    // Check if locked out
-    if (operatorMatched.isLockedOut || operatorMatched.status === 'Inactive') {
+    // Check if locked out (Super Admin and Admin can never be locked out)
+    const canBeLocked = operatorMatched.role !== 'Super Admin' && operatorMatched.role !== 'Admin';
+    if ((operatorMatched.isLockedOut && canBeLocked) || operatorMatched.status === 'Inactive') {
       // Record blocked log
       const blockedLog: SecurityLog = {
         id: `log-${Date.now()}`,
@@ -250,7 +251,8 @@ export default function LoginView({
       .catch((err: any) => {
         // Increase failed attempts
         const currentFailed = (operatorMatched.failedAttempts || 0) + 1;
-        const isNowLocked = currentFailed >= 3;
+        const maxAttempts = (operatorMatched.role === 'Super Admin' || operatorMatched.role === 'Admin') ? 999 : 10;
+        const isNowLocked = currentFailed >= maxAttempts;
 
         const updatedOperators = state.operators.map(op => {
           if (op.id === operatorMatched.id) {
@@ -270,7 +272,7 @@ export default function LoginView({
           operatorId: operatorMatched.id,
           operatorName: operatorMatched.name,
           role: operatorMatched.role,
-          action: `Failed Login Step (${currentFailed}/3 Attempts) via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
+          action: `Failed Login Step (${currentFailed}/${maxAttempts} Attempts) via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
           status: isNowLocked ? 'Blocked' : 'Failed',
           ipAddress: browserDetails.ip,
           device: browserDetails.device,
@@ -284,9 +286,9 @@ export default function LoginView({
         });
 
         if (isNowLocked) {
-          setErrorMsg('❌ 3 असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after 3 failed login attempts)');
+          setErrorMsg(`❌ ${maxAttempts} असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after ${maxAttempts} failed login attempts)`);
         } else {
-          setErrorMsg(`❌ गलत पासवर्ड या प्रमाणीकरण त्रुटि! शेष अवसर: ${3 - currentFailed} (Wrong password or authentication error)`);
+          setErrorMsg(`❌ गलत पासवर्ड या प्रमाणीकरण त्रुटि! शेष अवसर: ${maxAttempts - currentFailed} (Wrong password or authentication error. Remaining attempts: ${maxAttempts - currentFailed})`);
         }
       });
   };
