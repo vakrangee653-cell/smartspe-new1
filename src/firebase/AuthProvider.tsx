@@ -44,38 +44,6 @@ const PRESET_OPERATORS: { [email: string]: any } = {
     password: 'superadmin123',
     walletLimit: 1000000,
     commissionRate: 100,
-  },
-  'rajendra.spe@gmail.com': {
-    name: 'Rajendra Prasad',
-    role: 'Admin',
-    phoneNumber: '+91 98290 12345',
-    password: 'admin123',
-    walletLimit: 500000,
-    commissionRate: 80,
-  },
-  'smartspeatm@gmail.com': {
-    name: 'SmartSPE ATM Admin',
-    role: 'Admin',
-    phoneNumber: '+91 99999 77777',
-    password: 'admin123',
-    walletLimit: 500000,
-    commissionRate: 80,
-  },
-  'suresh.emitra@gmail.com': {
-    name: 'Suresh Kumar',
-    role: 'Operator',
-    phoneNumber: '+91 99887 76655',
-    password: 'operator123',
-    walletLimit: 15000,
-    commissionRate: 12,
-  },
-  'priyanka.csp@gmail.com': {
-    name: 'Priyanka Sharma',
-    role: 'Operator',
-    phoneNumber: '+91 91160 55555',
-    password: 'operator123',
-    walletLimit: 15000,
-    commissionRate: 15,
   }
 };
 

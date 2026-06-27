@@ -36,7 +36,7 @@ import {
 import { formatINR, deduplicateById } from './utils';
 
 export const metadata = {
-  title: "SmartSPE - CSC Management Software",
+  title: "CSP Bilin V02 - CSC Management Software",
   description: "CSC Management & Billing Software"
 };
 
@@ -88,40 +88,33 @@ export default function App() {
         try {
           const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
           if (centralState) {
-            freshOperators = centralState.operators || [];
+            freshOperators = (centralState.operators || []).filter((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
+            if (freshOperators.length === 0) {
+              freshOperators = [
+                {
+                  id: 'op-super',
+                  name: 'Vakrangee Super Admin',
+                  email: 'vakrangee653@gmail.com',
+                  role: 'Super Admin',
+                  status: 'Active',
+                  walletLimit: 1000000,
+                  commissionRate: 100,
+                  phoneNumber: '+91 90010 12345',
+                  password: 'superadmin123',
+                  failedAttempts: 0,
+                  isLockedOut: false,
+                  createdBy: 'System'
+                }
+              ];
+            }
             freshSettings = centralState.commissionSettings;
             freshLogs = centralState.securityLogs || [];
           } else {
             // Seed default if centralState does not exist
             const defaultState = getInitialState();
-            freshOperators = defaultState.operators;
+            freshOperators = defaultState.operators.filter((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
             freshSettings = defaultState.commissionSettings;
             freshLogs = defaultState.securityLogs;
-            await saveStateToFirestore('shared_shop_state', {
-              operators: freshOperators,
-              securityLogs: freshLogs,
-              commissionSettings: freshSettings
-            });
-          }
-
-          // Inject smartspeatm@gmail.com dynamically if missing
-          const hasSmartSPEATM = freshOperators.some((op: any) => op.email.toLowerCase() === 'smartspeatm@gmail.com');
-          if (!hasSmartSPEATM) {
-            console.log('[App] Proactively injecting smartspeatm@gmail.com into fresh operator registry');
-            freshOperators.push({
-              id: 'op-smartspeatm',
-              name: 'SmartSPE ATM Admin',
-              email: 'smartspeatm@gmail.com',
-              role: 'Admin',
-              status: 'Active',
-              walletLimit: 500000,
-              commissionRate: 80,
-              phoneNumber: '+91 99999 77777',
-              password: 'admin123',
-              failedAttempts: 0,
-              isLockedOut: false,
-              createdBy: 'op-super'
-            });
             await saveStateToFirestore('shared_shop_state', {
               operators: freshOperators,
               securityLogs: freshLogs,
@@ -1196,7 +1189,7 @@ export default function App() {
           </div>
           <div className="text-center">
             <h3 className="text-sm font-bold tracking-tight uppercase font-display">
-              SmartSPE Secure Workspace
+              CSP Bilin V02 Secure Workspace
             </h3>
             <p className="text-[10px] uppercase font-mono tracking-wider text-slate-400 mt-1 animate-pulse">
               Firebase Synced State Loading...

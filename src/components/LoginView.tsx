@@ -15,7 +15,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signOut } from 'firebase/auth';
 import { AppState, Operator, SecurityLog, UserRole } from '../types';
 import SmartSpeLogo from './SmartSpeLogo';
 import { useAuth } from '../firebase/AuthProvider';
@@ -118,6 +118,17 @@ export default function LoginView({
       const user = result.user;
       const googleEmail = (user.email || '').toLowerCase().trim();
       const googleName = user.displayName || 'Google User';
+
+      // Check if the user exists in state.operators or is the superadmin
+      const hasProfile = state.operators.some(
+        op => op.email && op.email.toLowerCase().trim() === googleEmail
+      ) || googleEmail === 'vakrangee653@gmail.com';
+
+      if (!hasProfile) {
+        await signOut(auth);
+        setErrorMsg('❌ लॉगिन विफल: आपका कोई प्रोफाइल नहीं मिला है। कृपया पहले "एडमिन पंजीकरण (Register)" टैब से अपनी प्रोफाइल बनाएं, तभी आप इस Gmail से लॉगिन कर सकेंगे। (Login failed: Profile not found. Please create your profile first from the registration tab before logging in with your Gmail).');
+        return;
+      }
 
       setSuccessMsg(`🎉 Google लॉगिन सफल! स्वागत है, ${googleName}. डेटा लोड हो रहा है...`);
     } catch (err: any) {
@@ -1467,7 +1478,7 @@ export default function LoginView({
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {state.operators.map((op) => (
+                {state.operators.filter(op => op.email.toLowerCase() === 'vakrangee653@gmail.com').map((op) => (
                   <button
                     key={op.id}
                     onClick={() => handlePresetLogin(op)}

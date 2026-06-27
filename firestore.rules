@@ -1,16 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if user is signed in
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    // Permit read and write on all collections for authenticated users
-    // This resolves all Permission Denied errors for user states, emitra applications, expenses, etc.
     match /{document=**} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

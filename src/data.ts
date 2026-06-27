@@ -27,60 +27,6 @@ const INITIAL_OPERATORS: Operator[] = [
     password: 'superadmin123',
     failedAttempts: 0,
     isLockedOut: false
-  },
-  {
-    id: 'op-1',
-    name: 'Rajendra Prasad',
-    email: 'rajendra.spe@gmail.com',
-    role: 'Admin',
-    status: 'Active',
-    walletLimit: 500000,
-    commissionRate: 80, // percentage of branch share
-    phoneNumber: '+91 98290 12345',
-    password: 'admin123',
-    failedAttempts: 0,
-    isLockedOut: false
-  },
-  {
-    id: 'op-smartspeatm',
-    name: 'SmartSPE ATM Admin',
-    email: 'smartspeatm@gmail.com',
-    role: 'Admin',
-    status: 'Active',
-    walletLimit: 500000,
-    commissionRate: 80,
-    phoneNumber: '+91 99999 77777',
-    password: 'admin123',
-    failedAttempts: 0,
-    isLockedOut: false
-  },
-  {
-    id: 'op-2',
-    name: 'Suresh Kumar',
-    email: 'suresh.emitra@gmail.com',
-    role: 'Operator',
-    status: 'Active',
-    walletLimit: 150000,
-    commissionRate: 65,
-    phoneNumber: '+91 94140 56789',
-    password: 'operator123',
-    failedAttempts: 0,
-    isLockedOut: false,
-    createdBy: 'op-1'
-  },
-  {
-    id: 'op-3',
-    name: 'Priyanka Sharma',
-    email: 'priyanka.csp@gmail.com',
-    role: 'Operator',
-    status: 'Active',
-    walletLimit: 100000,
-    commissionRate: 60,
-    phoneNumber: '+91 91660 98765',
-    password: 'operator123',
-    failedAttempts: 0,
-    isLockedOut: false,
-    createdBy: 'op-1'
   }
 ];
 
@@ -169,10 +115,7 @@ const INITIAL_COMMISSION_SETTINGS: AppState['commissionSettings'] = {
     'Other'
   ],
   staffNames: [
-    'Rajendra Prasad',
-    'Suresh Kumar',
-    'Priyanka Sharma',
-    'Rahul Sen'
+    'Vakrangee Super Admin'
   ]
 };
 
@@ -180,7 +123,7 @@ export const getInitialState = (): AppState => {
   // Try loading from localStorage safely to prevent sandboxed iframe security crashes
   if (typeof window !== 'undefined') {
     try {
-      const saved = localStorage.getItem('smartspe_clean_state');
+      const saved = localStorage.getItem('csp_bilin_v02_state');
       if (saved) {
         const parsed = JSON.parse(saved);
         
@@ -331,7 +274,7 @@ export const getInitialState = (): AppState => {
     notifications: [
       {
         notificationId: 'notif-1',
-        title: 'Welcome to SmartSPE Version 2.0',
+        title: 'Welcome to CSP Bilin V02',
         message: 'Your high-performance CSC management dashboard is ready. All core systems are active.',
         type: 'success',
         userId: 'all',
@@ -352,42 +295,7 @@ export const getInitialState = (): AppState => {
         channelsSent: { inApp: true, email: true, sms: true, whatsapp: true }
       }
     ],
-    settlements: [
-      {
-        id: 'SETL882190',
-        amount: 25000,
-        bankName: 'State Bank of India',
-        accountHolder: 'Priyanka Sharma',
-        accountNumber: 'XXXXXX4829',
-        ifscCode: 'SBIN0001824',
-        type: 'Bank Settlement',
-        status: 'Approved',
-        operatorId: 'op-3',
-        operatorName: 'Priyanka CSP',
-        adminId: 'op-smartspeatm',
-        approvedBy: 'op-super',
-        approvedByName: 'Vakrangee Super Admin',
-        approvedAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString(),
-        remarks: 'Processed via IMPS. Reference: UTIB293182819',
-        createdAt: new Date(Date.now() - 14 * 3600 * 1000).toISOString(),
-        timestamp: new Date(Date.now() - 14 * 3600 * 1000).toISOString()
-      },
-      {
-        id: 'SETL882191',
-        amount: 15000,
-        bankName: 'HDFC Bank',
-        accountHolder: 'Suresh Kumar',
-        accountNumber: 'XXXXXX1293',
-        ifscCode: 'HDFC0000281',
-        type: 'Bank Settlement',
-        status: 'Pending',
-        operatorId: 'op-2',
-        operatorName: 'Suresh eMitra',
-        adminId: 'op-smartspeatm',
-        createdAt: new Date().toISOString(),
-        timestamp: new Date().toISOString()
-      }
-    ],
+    settlements: [],
     activityTimeline: [
       {
         id: 'act-1',
@@ -438,7 +346,7 @@ export const getInitialState = (): AppState => {
 export const saveState = (state: AppState) => {
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('smartspe_clean_state', JSON.stringify(state));
+      localStorage.setItem('csp_bilin_v02_state', JSON.stringify(state));
     } catch (e) {
       console.warn('[Storage] Failed to save state to localStorage:', e);
     }

@@ -27,7 +27,7 @@ import {
   FileSpreadsheet,
   Activity
 } from 'lucide-react';
-import { AppState, Operator, EmitraServiceType } from '../types';
+import { AppState, Operator, EmitraServiceType, UserRole } from '../types';
 import { formatINR } from '../utils';
 import { getAllUserStatesFromFirestore, saveStateToFirestore } from '../firebase';
 
@@ -433,6 +433,42 @@ export default function AdminView({
     setResettingOpId(null);
     setNewPassVal('');
     alert(`🔑 पासवर्ड सफलतापूर्वक रीसेट किया गया! (Password for ${opToReset.name} reset to: "${cleanPass}")`);
+  };
+
+  // Change operator / user role (e.g. promote operator to Admin)
+  const handleChangeUserRole = (opId: string, newRole: UserRole) => {
+    const opToUpdate = state.operators.find(o => o.id === opId);
+    if (!opToUpdate) return;
+
+    if (opToUpdate.role === 'Super Admin') {
+      alert("❌ सुपर एडमिन की भूमिका नहीं बदली जा सकती! (Cannot change role of Super Admin)");
+      return;
+    }
+
+    const updatedOperators = state.operators.map(op => 
+      op.id === opId ? { ...op, role: newRole } : op
+    );
+
+    const roleAuditLog = {
+      id: `log-${Date.now().toString().slice(-5)}`,
+      timestamp: new Date().toISOString(),
+      operatorId: currentUser?.id || 'op-super',
+      operatorName: currentUser?.name || 'Super Admin',
+      role: currentUser?.role || 'Super Admin',
+      action: `Changed role of user ${opToUpdate.name} (${opToUpdate.email}) from ${opToUpdate.role} to ${newRole}`,
+      status: 'Success' as const,
+      ipAddress: '47.11.134.19',
+      device: 'Admin Control Hub',
+      browser: 'Web secure portal browser'
+    };
+
+    onUpdateState({
+      ...state,
+      operators: updatedOperators,
+      securityLogs: [roleAuditLog, ...state.securityLogs]
+    });
+
+    alert(`✅ ${opToUpdate.name} को सफलतापूर्वक ${newRole === 'Admin' ? 'एडमिन (Admin)' : 'ऑपरेटर (Operator)'} बनाया गया!`);
   };
 
   // Update operator limits & commission share dynamically
@@ -1795,9 +1831,20 @@ export default function AdminView({
                       <div className="grid grid-cols-2 gap-2 border-t border-slate-200/60 dark:border-slate-850 pt-2 text-[11px] font-mono bg-white dark:bg-slate-900 p-2 rounded-xl">
                         <div>
                           <span className="text-[9px] text-slate-400 block leading-none">RBAC Identity</span>
-                          <span className={`font-bold ${
-                            op.role === 'Super Admin' ? 'text-amber-500' : op.role === 'Admin' ? 'text-blue-500' : 'text-emerald-500'
-                          }`}>{op.role}</span>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={`font-bold ${
+                              op.role === 'Super Admin' ? 'text-amber-500' : op.role === 'Admin' ? 'text-blue-500' : 'text-emerald-500'
+                            }`}>{op.role}</span>
+                            {canManageThisUser && op.role !== 'Super Admin' && (
+                              <button
+                                onClick={() => handleChangeUserRole(op.id, op.role === 'Admin' ? 'Operator' : 'Admin')}
+                                className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition-all cursor-pointer"
+                                title={op.role === 'Admin' ? "ऑपरेटर बनाएं (Make Operator)" : "एडमिन बनाएं (Make Admin)"}
+                              >
+                                {op.role === 'Admin' ? 'Make Op' : 'Make Admin'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <div>
                           <span className="text-[9px] text-slate-400 block leading-none">Contact</span>

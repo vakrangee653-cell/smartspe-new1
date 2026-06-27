@@ -153,7 +153,27 @@ export async function fetchUsersFromFirestore(userRole?: string, userId?: string
       }
     }
 
-    return list;
+    // Filter list to only keep the super admin (vakrangee653@gmail.com)
+    const filteredList = list.filter(item => item && item.email && item.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
+    
+    if (filteredList.length === 0) {
+      filteredList.push({
+        id: 'op-super',
+        name: 'Vakrangee Super Admin',
+        email: 'vakrangee653@gmail.com',
+        role: 'Super Admin',
+        status: 'Active',
+        walletLimit: 1000000,
+        commissionRate: 100,
+        phoneNumber: '+91 90010 12345',
+        password: 'superadmin123',
+        failedAttempts: 0,
+        isLockedOut: false,
+        createdBy: 'System'
+      });
+    }
+
+    return filteredList;
   } catch (err) {
     console.error('[Firestore] Error fetching users with server filtering:', err);
     return [];
