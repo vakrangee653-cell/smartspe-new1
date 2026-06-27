@@ -7,7 +7,8 @@ import {
   signInWithPopup, 
   signOut,
   onAuthStateChanged,
-  User
+  User,
+  updatePassword as firebaseUpdatePassword
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -99,9 +100,58 @@ export function mapUserDoc(op: any): any {
     failedAttempts: op.failedAttempts !== undefined ? Number(op.failedAttempts) : 0,
     isLockedOut: !!op.isLockedOut,
     password: op.password || '',
+    photoUrl: op.photoUrl || '',
+    address: op.address || '',
     createdAt: op.createdAt || now,
     updatedAt: now
   };
+}
+
+export function deduplicateOperators(ops: any[]): any[] {
+  if (!Array.isArray(ops)) return [];
+  const normalized = ops.map(op => ({
+    ...op,
+    id: op.id || op.uid || '',
+    email: (op.email || '').toLowerCase().trim()
+  })).filter(op => op.id);
+
+  const emailGroups: { [email: string]: any[] } = {};
+  for (const op of normalized) {
+    if (!emailGroups[op.email]) {
+      emailGroups[op.email] = [];
+    }
+    emailGroups[op.email].push(op);
+  }
+
+  const resolvedByEmail: any[] = [];
+  for (const email of Object.keys(emailGroups)) {
+    const group = emailGroups[email];
+    if (group.length === 1) {
+      resolvedByEmail.push(group[0]);
+    } else {
+      let best = group.find(op => !op.id.startsWith('op-'));
+      if (!best) {
+        best = group[0];
+      }
+      resolvedByEmail.push(best);
+    }
+  }
+
+  const idGroups: { [id: string]: any[] } = {};
+  const result: any[] = [];
+  for (const op of resolvedByEmail) {
+    if (!idGroups[op.id]) {
+      idGroups[op.id] = [];
+    }
+    idGroups[op.id].push(op);
+  }
+
+  for (const id of Object.keys(idGroups)) {
+    const group = idGroups[id];
+    result.push(group[0]);
+  }
+
+  return result;
 }
 
 // 1. Users sync with schema validation and bi-directional cleanup of deleted operators
@@ -121,7 +171,7 @@ export async function syncUsersToFirestore(operators: any[]) {
   // Find and clean up any deleted operator documents from 'users' collection
   try {
     const snap = await getDocs(collection(db, 'users'));
-    snap.forEach(async (docSnap) => {
+    for (const docSnap of snap.docs) {
       const userId = docSnap.id;
       const data = docSnap.data();
       const isSuperEmail = data && data.email && data.email.toLowerCase().trim() === 'vakrangee653@gmail.com';
@@ -131,7 +181,7 @@ export async function syncUsersToFirestore(operators: any[]) {
         console.log(`[Firestore Cleanup] Deleting removed user from 'users' collection: ${userId}`);
         await deleteDoc(doc(db, 'users', userId));
       }
-    });
+    }
   } catch (err) {
     console.error('[Firestore Cleanup] Error removing deleted operators from users collection:', err);
   }
@@ -194,7 +244,7 @@ export async function fetchUsersFromFirestore(userRole?: string, userId?: string
       });
     }
 
-    return list;
+    return deduplicateOperators(list);
   } catch (err) {
     console.error('[Firestore] Error fetching users with server filtering:', err);
     return [];
@@ -947,6 +997,14 @@ export async function getStateFromFirestore(userId: string, userRole?: string, c
     // 2. If legacyData exists, return it immediately as the single source of truth.
     // This guarantees perfect integrity, zero lag, and prevents cross-contamination of balances.
     if (legacyData) {
+      if (userId === 'shared_shop_state' || legacyData.operators !== undefined) {
+        try {
+          const users = await fetchUsersFromFirestore(role, filterId);
+          legacyData.operators = users.map(u => mapUserDoc(u));
+        } catch (opSyncErr) {
+          console.error('[Firebase] Failed to dynamically sync operators list, returning cached list:', opSyncErr);
+        }
+      }
       return legacyData;
     }
 
@@ -1018,4 +1076,105 @@ export async function getAllUserStatesFromFirestore(): Promise<{ id: string; dat
     console.error('[Firebase] Failed to fetch all user states:', err);
     return [];
   }
+}
+
+export async function clearFirestoreDatabase() {
+  const collectionsToWipe = [
+    'transactions',
+    'emitra_applications',
+    'offline_work',
+    'expenses',
+    'audit_logs',
+    'wallet_ledger',
+    'notifications',
+    'settlements',
+    'activity_timeline',
+    'backups',
+    'commission_rules'
+  ];
+
+  console.log('[Firestore Wipe] Initiating full cloud database wipe...');
+
+  // 1. Wipe simple collections completely
+  for (const colName of collectionsToWipe) {
+    try {
+      const snap = await getDocs(collection(db, colName));
+      console.log(`[Firestore Wipe] Deleting ${snap.size} documents from '${colName}'...`);
+      const deletePromises = snap.docs.map(docSnap => deleteDoc(doc(db, colName, docSnap.id)));
+      await Promise.all(deletePromises);
+    } catch (err) {
+      console.error(`[Firestore Wipe] Error clearing collection ${colName}:`, err);
+    }
+  }
+
+  // 2. Wipe users collection, preserving only Super Admin
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    console.log(`[Firestore Wipe] Processing users collection deletion (excluding super admin)...`);
+    const userDeletePromises = usersSnap.docs.map(docSnap => {
+      const uData = docSnap.data();
+      const isSuperEmail = uData && uData.email && uData.email.toLowerCase().trim() === 'vakrangee653@gmail.com';
+      if (docSnap.id !== 'op-super' && !isSuperEmail) {
+        return deleteDoc(doc(db, 'users', docSnap.id));
+      }
+      return Promise.resolve();
+    });
+    await Promise.all(userDeletePromises);
+  } catch (err) {
+    console.error('[Firestore Wipe] Error clearing users collection:', err);
+  }
+
+  // 3. Reset settings to default values
+  try {
+    await setDoc(doc(db, 'settings', 'shopDetails'), {
+      name: 'Vakrangee Kendra (वाकरंगी केंद्र)',
+      mobile: '+91 90010 12345',
+      gmail: 'vakrangee653@gmail.com',
+      address: 'मुख्य चौराहा, वार्ड नं. 12, राजस्थान',
+      logoUrl: ''
+    });
+    await setDoc(doc(db, 'settings', 'commissionSettings'), {
+      depositRate: 0.2,
+      withdrawalRate: 0.5,
+      transferRate: 15.0,
+      dmtRate: 75.0,
+      emitraRates: {},
+      emitraFees: {},
+      offlineFees: {},
+      offlineCosts: {},
+      customExpenseCategories: [],
+      staffNames: []
+    });
+    console.log('[Firestore Wipe] Settings reset to default.');
+  } catch (err) {
+    console.error('[Firestore Wipe] Error resetting settings:', err);
+  }
+
+  // 4. Reset wallets
+  try {
+    await setDoc(doc(db, 'wallets', 'main_wallet'), { balance: 0, withdrawnCommission: 0, totalCommissionEarned: 0, lastUpdated: new Date().toISOString() });
+    await setDoc(doc(db, 'wallets', 'aeps_wallet'), { onlineBalance: 0, physicalBalance: 0, lastUpdated: new Date().toISOString() });
+    await setDoc(doc(db, 'wallets', 'emitra_wallet'), { balance: 0, lastUpdated: new Date().toISOString() });
+    console.log('[Firestore Wipe] Wallets reset to 0.');
+  } catch (err) {
+    console.error('[Firestore Wipe] Error resetting wallets:', err);
+  }
+
+  // 5. Reset user_states
+  try {
+    const statesSnap = await getDocs(collection(db, 'user_states'));
+    const stateDeletePromises = statesSnap.docs.map(docSnap => deleteDoc(doc(db, 'user_states', docSnap.id)));
+    await Promise.all(stateDeletePromises);
+    console.log('[Firestore Wipe] All user_states wiped.');
+  } catch (err) {
+    console.error('[Firestore Wipe] Error resetting user_states:', err);
+  }
+}
+
+export async function changeAuthUserPassword(newPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('No authenticated user found.');
+  }
+  await firebaseUpdatePassword(user, newPassword);
 }

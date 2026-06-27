@@ -23,6 +23,8 @@ export interface Operator {
   adminId?: string;
   permissions?: string[];
   walletBalance?: number;
+  photoUrl?: string;
+  address?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -290,6 +292,8 @@ export interface AppState {
     role: UserRole;
     phoneNumber: string;
     createdBy?: string;
+    photoUrl?: string;
+    address?: string;
   } | null;
   shopDetails?: ShopDetails;
   wallet: WalletState;

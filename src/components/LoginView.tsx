@@ -238,7 +238,9 @@ export default function LoginView({
             email: operatorMatched.email,
             role: operatorMatched.role,
             phoneNumber: operatorMatched.phoneNumber,
-            createdBy: operatorMatched.createdBy
+            createdBy: operatorMatched.createdBy,
+            photoUrl: operatorMatched.photoUrl || '',
+            address: operatorMatched.address || ''
           },
           securityLogs: [successLog, ...state.securityLogs]
         });
@@ -324,7 +326,9 @@ export default function LoginView({
           email: opPreset.email,
           role: opPreset.role,
           phoneNumber: opPreset.phoneNumber,
-          createdBy: opPreset.createdBy
+          createdBy: opPreset.createdBy,
+          photoUrl: opPreset.photoUrl || '',
+          address: opPreset.address || ''
         },
         securityLogs: [successLog, ...state.securityLogs]
       });
@@ -959,7 +963,9 @@ export default function LoginView({
                               email: tempLoginOp.email,
                               role: tempLoginOp.role,
                               phoneNumber: tempLoginOp.phoneNumber,
-                              createdBy: tempLoginOp.createdBy
+                              createdBy: tempLoginOp.createdBy,
+                              photoUrl: tempLoginOp.photoUrl || '',
+                              address: tempLoginOp.address || ''
                             },
                             securityLogs: [successLog, ...state.securityLogs]
                           });

@@ -11,7 +11,6 @@ import BankingView from './components/BankingView';
 import EmitraView from './components/EmitraView';
 import OfflineView from './components/OfflineView';
 import ReportsView from './components/ReportsView';
-import SecurityView from './components/SecurityView';
 import AdminView from './components/AdminView';
 import ExpensesView from './components/ExpensesView';
 import LoginView from './components/LoginView';
@@ -19,7 +18,7 @@ import UserProfileView from './components/UserProfileView';
 
 import { getInitialState, saveState } from './data';
 import { AppState, UserRole } from './types';
-import { auth, saveStateToFirestore, getStateFromFirestore } from './firebase';
+import { auth, saveStateToFirestore, getStateFromFirestore, deduplicateOperators } from './firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import { 
   Fingerprint, 
@@ -88,7 +87,7 @@ export default function App() {
         try {
           const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
           if (centralState) {
-            freshOperators = centralState.operators || [];
+            freshOperators = deduplicateOperators(centralState.operators || []);
             const hasSuperAdmin = freshOperators.some((op: any) => op.email && op.email.toLowerCase().trim() === 'vakrangee653@gmail.com');
             if (!hasSuperAdmin) {
               freshOperators.push({
@@ -106,12 +105,13 @@ export default function App() {
                 createdBy: 'System'
               });
             }
+            freshOperators = deduplicateOperators(freshOperators);
             freshSettings = centralState.commissionSettings;
             freshLogs = centralState.securityLogs || [];
           } else {
             // Seed default if centralState does not exist
             const defaultState = getInitialState();
-            freshOperators = defaultState.operators;
+            freshOperators = deduplicateOperators(defaultState.operators);
             freshSettings = defaultState.commissionSettings;
             freshLogs = defaultState.securityLogs;
             await saveStateToFirestore('shared_shop_state', {
@@ -125,7 +125,7 @@ export default function App() {
         }
 
         setState(prev => {
-          const activeOps = freshOperators.length > 0 ? freshOperators : prev.operators;
+          const activeOps = deduplicateOperators(freshOperators.length > 0 ? freshOperators : prev.operators);
           const existingOp = activeOps.find(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
           
           if (existingOp && existingOp.status !== 'Active') {
@@ -142,12 +142,16 @@ export default function App() {
           let resolvedCreatedBy: string | undefined = undefined;
           let resolvedName = firebaseUser.displayName || 'Vakrangee Operator';
           let resolvedPhone = firebaseUser.phoneNumber || '+91 99999 55555';
+          let resolvedPhotoUrl = '';
+          let resolvedAddress = '';
           
           if (existingOp) {
             resolvedRole = existingOp.role;
             resolvedCreatedBy = existingOp.createdBy;
             if (existingOp.name) resolvedName = existingOp.name;
             if (existingOp.phoneNumber) resolvedPhone = existingOp.phoneNumber;
+            if (existingOp.photoUrl) resolvedPhotoUrl = existingOp.photoUrl;
+            if (existingOp.address) resolvedAddress = existingOp.address;
           }
 
           const updatedUser = {
@@ -156,6 +160,8 @@ export default function App() {
             email: email,
             role: resolvedRole,
             phoneNumber: resolvedPhone,
+            photoUrl: resolvedPhotoUrl,
+            address: resolvedAddress,
             ...(resolvedCreatedBy ? { createdBy: resolvedCreatedBy } : {})
           };
           
@@ -199,6 +205,8 @@ export default function App() {
               return op;
             });
           }
+          
+          updatedOperators = deduplicateOperators(updatedOperators);
           
           const clean = {
             ...prev,
@@ -978,7 +986,7 @@ export default function App() {
     
     // Operator access restrictions
     if (role === 'Operator') {
-      const forbiddenTabsForOperator = ['security', 'admin'];
+      const forbiddenTabsForOperator = ['admin'];
       if (forbiddenTabsForOperator.includes(activeTab)) {
         console.warn(`[Route Security] Operator tried to access forbidden tab: ${activeTab}. Redirecting to dashboard.`);
         setActiveTab('dashboard');
@@ -1142,15 +1150,6 @@ export default function App() {
           <ReportsView 
             state={state} 
             darkMode={darkMode}
-          />
-        );
-      case 'security':
-        return (
-          <SecurityView 
-            state={state} 
-            onUpdateState={handleUpdateState}
-            darkMode={darkMode}
-            onLockSession={() => setIsLocked(true)}
           />
         );
       case 'admin':

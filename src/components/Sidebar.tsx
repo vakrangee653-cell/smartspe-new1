@@ -69,11 +69,6 @@ export default function Sidebar({
     { id: 'profile', label: 'User Profile (यूज़र प्रोफ़ाइल)', icon: User },
     { id: 'reports', label: 'Reports & Analytics', icon: FileText },
     ...(currentUser?.role === 'Super Admin' || currentUser?.role === 'Admin'
-      ? [
-          { id: 'security', label: 'Security Portal', icon: ShieldCheck }
-        ]
-      : []),
-    ...(currentUser?.role === 'Super Admin' || currentUser?.role === 'Admin'
       ? [{ id: 'admin', label: 'Admin Settings', icon: Settings }] 
       : [])
   ];

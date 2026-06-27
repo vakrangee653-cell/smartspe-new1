@@ -29,7 +29,7 @@ import {
 } from 'lucide-react';
 import { AppState, Operator, EmitraServiceType, UserRole } from '../types';
 import { formatINR } from '../utils';
-import { getAllUserStatesFromFirestore, saveStateToFirestore } from '../firebase';
+import { getAllUserStatesFromFirestore, saveStateToFirestore, clearFirestoreDatabase } from '../firebase';
 
 interface AdminViewProps {
   state: AppState;
@@ -1385,14 +1385,20 @@ export default function AdminView({
   };
 
   // Restore state factory wipe reset
-  const handleSystemRestoreDefault = () => {
-    if (!window.confirm("CRITICAL WARNING: This action will restore your local database variables to original factory defaults, wiping custom customer registries, logs, and live wallet modifications. Continue?")) return;
+  const handleSystemRestoreDefault = async () => {
+    if (!window.confirm("CRITICAL WARNING: This action will completely WIPE your entire Cloud Firestore Database and local store, removing all transactions, operators, expenses, settlements, and restoring factory defaults. Continue?")) return;
     
-    // Clear item
-    localStorage.removeItem('smartspe_clean_state');
-    
-    // Hard refresh page to trigger default seed inside data.ts
-    window.location.reload();
+    try {
+      alert("Please wait... Wiping the Cloud Firestore database. This may take 3 to 5 seconds.");
+      await clearFirestoreDatabase();
+      localStorage.removeItem('smartspe_clean_state');
+      localStorage.removeItem('smartspe_cloud_backups');
+      alert("✅ All cloud and local database records wiped successfully! The system will now reload in its factory-fresh default state.");
+      window.location.reload();
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred while wiping cloud databases. Please reload and try again.");
+    }
   };
 
   // Clear all demo/dummy records to start fresh
@@ -2964,17 +2970,17 @@ export default function AdminView({
                 <div className="p-4 rounded-2xl bg-rose-600/5 text-slate-800 dark:text-slate-200 border border-rose-500/15 space-y-3 flex flex-col justify-between">
                   <div>
                     <h5 className="font-bold flex items-center gap-1 text-rose-600 dark:text-rose-455">
-                      <Database size={15} /> System Factory Reset
+                      <Database size={15} /> Cloud & Local Factory Reset
                     </h5>
                     <p className="text-xs text-slate-405 leading-normal mt-1.5 text-slate-400">
-                      CRITICAL: Instantly clear all modifications from your browser store, wiping all transaction references, customer files, and restoring default matrices.
+                      CRITICAL: Instantly clear all records, transactions, operators, limits, and settings from both the Cloud Database and browser store, returning to clean defaults.
                     </p>
                   </div>
                   <button
                     onClick={handleSystemRestoreDefault}
                     className="w-full py-2 bg-rose-600 text-white rounded-xl font-bold cursor-pointer hover:bg-rose-700 transition-colors"
                   >
-                    Wipe database defaults
+                    Wipe Database & Reset
                   </button>
                 </div>
 
