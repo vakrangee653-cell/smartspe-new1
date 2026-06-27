@@ -20,7 +20,8 @@ import {
   limit,
   orderBy,
   where,
-  runTransaction
+  runTransaction,
+  deleteDoc
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
@@ -103,8 +104,10 @@ export function mapUserDoc(op: any): any {
   };
 }
 
-// 1. Users sync with schema validation
+// 1. Users sync with schema validation and bi-directional cleanup of deleted operators
 export async function syncUsersToFirestore(operators: any[]) {
+  const activeIds = new Set(operators.map(op => op.id).filter(Boolean));
+
   for (const op of operators) {
     if (!op.id) continue;
     try {
@@ -113,6 +116,24 @@ export async function syncUsersToFirestore(operators: any[]) {
     } catch (err) {
       console.error('[Firestore] Error syncing operator to users collection:', err);
     }
+  }
+
+  // Find and clean up any deleted operator documents from 'users' collection
+  try {
+    const snap = await getDocs(collection(db, 'users'));
+    snap.forEach(async (docSnap) => {
+      const userId = docSnap.id;
+      const data = docSnap.data();
+      const isSuperEmail = data && data.email && data.email.toLowerCase().trim() === 'vakrangee653@gmail.com';
+      
+      // Do not delete Super Admin or active operators
+      if (userId !== 'op-super' && !isSuperEmail && !activeIds.has(userId)) {
+        console.log(`[Firestore Cleanup] Deleting removed user from 'users' collection: ${userId}`);
+        await deleteDoc(doc(db, 'users', userId));
+      }
+    });
+  } catch (err) {
+    console.error('[Firestore Cleanup] Error removing deleted operators from users collection:', err);
   }
 }
 
