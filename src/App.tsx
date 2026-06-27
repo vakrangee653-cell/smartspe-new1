@@ -69,6 +69,7 @@ export default function App() {
   const [passcodeError, setPasscodeError] = React.useState('');
   const [liveTime, setLiveTime] = React.useState('');
   const [firebaseLoading, setFirebaseLoading] = React.useState(true);
+  const [initialFirebaseLoaded, setInitialFirebaseLoaded] = React.useState(false);
 
   // Set document title dynamically
   React.useEffect(() => {
@@ -240,6 +241,7 @@ export default function App() {
           });
           
           setFirebaseLoading(false);
+          setInitialFirebaseLoaded(true);
           return clean;
         });
       } else {
@@ -256,6 +258,7 @@ export default function App() {
           return clean;
         });
         setFirebaseLoading(false);
+        setInitialFirebaseLoaded(true);
       }
     });
     return () => unsubscribe();
@@ -1198,7 +1201,7 @@ export default function App() {
   };
 
   // 0. FIREBASE STATE TRANSITION SPINNER GUARD
-  if (firebaseLoading) {
+  if (firebaseLoading && !initialFirebaseLoaded) {
     return (
       <div className={`min-h-screen flex flex-col items-center justify-center p-6 ${
         darkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'

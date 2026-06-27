@@ -477,6 +477,49 @@ export async function fetchExpensesFromFirestore(userRole?: string, userId?: str
   }
 }
 
+// 6.1 Customers Sync & Query
+export async function syncCustomersToFirestore(customers: any[], adminId?: string) {
+  for (const c of customers) {
+    if (!c.id) continue;
+    try {
+      const mappedCust = {
+        ...c,
+        adminId: c.adminId || adminId || c.createdBy || ''
+      };
+      await setDoc(doc(db, 'customers', c.id), mappedCust);
+    } catch (err) {
+      console.error('[Firestore] Error syncing customer:', err);
+    }
+  }
+}
+
+export async function fetchCustomersFromFirestore(userRole?: string, userId?: string): Promise<any[]> {
+  try {
+    const customerCol = collection(db, 'customers');
+    let q;
+
+    if (userRole === 'Super Admin') {
+      q = query(customerCol);
+    } else if (userRole === 'Admin' && userId) {
+      q = query(customerCol, where('adminId', '==', userId));
+    } else if (userRole === 'Operator' && userId) {
+      q = query(customerCol, where('createdBy', '==', userId));
+    } else {
+      q = query(customerCol);
+    }
+
+    const snap = await getDocs(q);
+    const list: any[] = [];
+    snap.forEach(docSnap => {
+      list.push(docSnap.data());
+    });
+    return list;
+  } catch (err) {
+    console.error('[Firestore] Error fetching customers:', err);
+    return [];
+  }
+}
+
 // 7. Settings sync (shopDetails, commissionSettings)
 export async function syncSettingsToFirestore(shopDetails: any, commissionSettings: any) {
   try {
@@ -599,6 +642,9 @@ export async function saveStateToFirestore(userId: string, state: any) {
     }
     if (state.expenses !== undefined) {
       await syncExpensesToFirestore(state.expenses, activeAdminId);
+    }
+    if (state.customers !== undefined) {
+      await syncCustomersToFirestore(state.customers, activeAdminId);
     }
     if (state.shopDetails !== undefined && state.commissionSettings !== undefined) {
       await syncSettingsToFirestore(state.shopDetails, state.commissionSettings);
@@ -994,17 +1040,83 @@ export async function getStateFromFirestore(userId: string, userRole?: string, c
 
     console.log(`[Firebase Server-Query] Loading state for ${userId}. Role: ${role}, Context UID: ${filterId}`);
 
-    // 2. If legacyData exists, return it immediately as the single source of truth.
+    // 2. If legacyData exists, return it after merging dynamic collections.
     // This guarantees perfect integrity, zero lag, and prevents cross-contamination of balances.
     if (legacyData) {
-      if (userId === 'shared_shop_state' || legacyData.operators !== undefined) {
+      if (userId === 'shared_shop_state') {
         try {
           const users = await fetchUsersFromFirestore(role, filterId);
-          legacyData.operators = users.map(u => mapUserDoc(u));
+          if (users && users.length > 0) {
+            legacyData.operators = users.map(u => mapUserDoc(u));
+          }
         } catch (opSyncErr) {
           console.error('[Firebase] Failed to dynamically sync operators list, returning cached list:', opSyncErr);
         }
+        return legacyData;
       }
+
+      // For branch states, dynamically pull collections to prevent clobbering/overwriting
+      try {
+        console.log(`[Firebase Server-Query] Pulling dynamic collections for legacyData: ${userId}`);
+        const [
+          users,
+          transactions,
+          emitraApps,
+          offlineWork,
+          expenses,
+          customers,
+          settlements,
+          notifications,
+          timeline
+        ] = await Promise.all([
+          fetchUsersFromFirestore(role, filterId),
+          fetchTransactionsFromFirestore(role, filterId),
+          fetchEmitraApplicationsFromFirestore(role, filterId),
+          fetchOfflineWorkFromFirestore(role, filterId),
+          fetchExpensesFromFirestore(role, filterId),
+          fetchCustomersFromFirestore(role, filterId),
+          fetchSettlementsFromFirestore(role, filterId),
+          fetchNotificationsFromFirestore(role, filterId),
+          fetchActivityTimelineFromFirestore(role, filterId)
+        ]);
+
+        const mergeAndDeduplicate = (legacyArr: any[] | undefined, fetchedArr: any[] | undefined, key: string = 'id') => {
+          const legacy = Array.isArray(legacyArr) ? legacyArr : [];
+          const fetched = Array.isArray(fetchedArr) ? fetchedArr : [];
+          if (fetched.length === 0) return legacy;
+          const merged = [...legacy];
+          fetched.forEach(item => {
+            if (item) {
+              const itemId = item[key] || item.id;
+              if (itemId) {
+                const idx = merged.findIndex(x => (x[key] || x.id) === itemId);
+                if (idx > -1) {
+                  merged[idx] = { ...merged[idx], ...item }; // merge/update latest
+                } else {
+                  merged.push(item);
+                }
+              }
+            }
+          });
+          return merged;
+        };
+
+        if (users && users.length > 0) {
+          legacyData.operators = users.map(u => mapUserDoc(u));
+        }
+
+        legacyData.transactions = mergeAndDeduplicate(legacyData.transactions, transactions);
+        legacyData.emitraApplications = mergeAndDeduplicate(legacyData.emitraApplications, emitraApps);
+        legacyData.offlineWork = mergeAndDeduplicate(legacyData.offlineWork, offlineWork);
+        legacyData.expenses = mergeAndDeduplicate(legacyData.expenses, expenses);
+        legacyData.customers = mergeAndDeduplicate(legacyData.customers, customers);
+        legacyData.settlements = mergeAndDeduplicate(legacyData.settlements, settlements);
+        legacyData.notifications = mergeAndDeduplicate(legacyData.notifications, notifications, 'notificationId');
+        legacyData.activityTimeline = mergeAndDeduplicate(legacyData.activityTimeline, timeline);
+      } catch (colErr) {
+        console.error('[Firebase] Failed to pull dynamic collections, returning raw legacyData:', colErr);
+      }
+
       return legacyData;
     }
 

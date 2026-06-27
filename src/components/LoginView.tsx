@@ -15,7 +15,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithPopup, signOut } from 'firebase/auth';
+import { signInWithPopup, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { AppState, Operator, SecurityLog, UserRole } from '../types';
 import SmartSpeLogo from './SmartSpeLogo';
 import { useAuth } from '../firebase/AuthProvider';
@@ -810,6 +810,26 @@ export default function LoginView({
                               className="w-full py-2 bg-amber-650 hover:bg-amber-700 text-white rounded-xl text-[11px] font-bold uppercase cursor-pointer transition-all"
                             >
                               डिफ़ॉल्ट पर सेट करें (Reset to Default)
+                            </button>
+                          </div>
+
+                          <div className="mt-3">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await sendPasswordResetEmail(auth, foundOperator.email);
+                                  alert(`📧 पासवर्ड रीसेट ईमेल सफलतापूर्वक '${foundOperator.email}' पर भेज दिया गया है! कृपया अपना इनबॉक्स या स्पैम फ़ोल्डर चेक करें। (Password reset link has been successfully sent to your email. Please check your inbox or spam folder.)`);
+                                  setRecoverySuccess(`पासवर्ड रीसेट लिंक आपके ईमेल (${foundOperator.email}) पर भेज दिया गया है!`);
+                                } catch (err: any) {
+                                  console.error('Password reset email error:', err);
+                                  alert(`❌ रीसेट लिंक भेजने में त्रुटि: ${err.message || err}`);
+                                }
+                              }}
+                              className="w-full py-2 bg-indigo-600/30 border border-indigo-500/30 hover:bg-indigo-600/50 text-indigo-300 rounded-xl text-[11px] font-bold uppercase cursor-pointer transition-all flex items-center justify-center gap-2"
+                            >
+                              <Mail size={12} />
+                              ईमेल द्वारा पासवर्ड रीसेट लिंक भेजें (Send Reset Link via Email)
                             </button>
                           </div>
                         </div>
