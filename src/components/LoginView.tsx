@@ -34,7 +34,7 @@ export default function LoginView({
   setDarkMode
 }: LoginViewProps) {
   const { loginWithEmail, registerWithEmail, loginWithGoogle } = useAuth();
-  const [loginMethod, setLoginMethod] = React.useState<'email' | 'phone'>('email');
+  const [loginMethod, setLoginMethod] = React.useState<'email' | 'phone'>('phone');
   const [emailInput, setEmailInput] = React.useState('');
   const [phoneInput, setPhoneInput] = React.useState('');
   const [passwordInput, setPasswordInput] = React.useState('');
@@ -149,7 +149,7 @@ export default function LoginView({
     setErrorMsg('');
     setSuccessMsg('');
 
-    const targetVal = (loginMethod === 'email' ? emailInput.trim() : phoneInput.trim()).toLowerCase();
+    const targetVal = phoneInput.trim();
     const enteredPass = passwordInput;
 
     if (!targetVal || !enteredPass) {
@@ -157,11 +157,14 @@ export default function LoginView({
       return;
     }
 
+    const isEmailInput = targetVal.includes('@');
+    const detectionMethod = isEmailInput ? 'email' : 'phone';
+
     // Find custom match inside state.operators (dynamic list)
     const existingOps = state.operators;
     const operatorMatched = existingOps.find(op => {
-      if (loginMethod === 'email') {
-        return op.email.toLowerCase() === targetVal;
+      if (isEmailInput) {
+        return op.email.toLowerCase() === targetVal.toLowerCase();
       } else {
         // Clean phone number matches
         const cleanOpPhone = op.phoneNumber.replace(/[\s+()-]/g, '');
@@ -185,7 +188,7 @@ export default function LoginView({
         operatorId: operatorMatched.id,
         operatorName: operatorMatched.name,
         role: operatorMatched.role,
-        action: `Blocked Login Attempt - Roll Blocked/Locked (${loginMethod === 'email' ? 'Email' : 'Phone'})`,
+        action: `Blocked Login Attempt - Roll Blocked/Locked (${detectionMethod === 'email' ? 'Email' : 'Phone'})`,
         status: 'Blocked',
         ipAddress: browserDetails.ip,
         device: browserDetails.device,
@@ -223,7 +226,7 @@ export default function LoginView({
           operatorId: cred.user.uid,
           operatorName: operatorMatched.name,
           role: operatorMatched.role,
-          action: `Direct Login Success via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
+          action: `Direct Login Success via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
           status: 'Success',
           ipAddress: browserDetails.ip,
           device: browserDetails.device,
@@ -272,7 +275,7 @@ export default function LoginView({
           operatorId: operatorMatched.id,
           operatorName: operatorMatched.name,
           role: operatorMatched.role,
-          action: `Failed Login Step (${currentFailed}/${maxAttempts} Attempts) via ${loginMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
+          action: `Failed Login Step (${currentFailed}/${maxAttempts} Attempts) via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
           status: isNowLocked ? 'Blocked' : 'Failed',
           ipAddress: browserDetails.ip,
           device: browserDetails.device,
@@ -1105,81 +1108,30 @@ export default function LoginView({
               </div>
             ) : viewMode === 'login' ? (
               <>
-                {/* Dual Login Tabs Selection */}
-                <div className="flex border-b border-slate-200 dark:border-slate-800 mt-4 mb-4">
-                  <button
-                    type="button"
-                    onClick={() => setLoginMethod('email')}
-                    className={`flex-1 pb-3 text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
-                      loginMethod === 'email' 
-                        ? 'border-indigo-600 text-indigo-600 dark:text-blue-500 dark:border-blue-500 font-extrabold' 
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Mail size={13} />
-                    <span>ईमेल लॉगिन (Email ID)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLoginMethod('phone')}
-                    className={`flex-1 pb-3 text-xs font-bold transition-all border-b-2 flex items-center justify-center gap-1.5 cursor-pointer ${
-                      loginMethod === 'phone' 
-                        ? 'border-indigo-600 text-indigo-600 dark:text-blue-500 dark:border-blue-500 font-extrabold' 
-                        : 'border-transparent text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Phone size={13} />
-                    <span>मोबाइल नंबर लॉगिन (Mobile No.)</span>
-                  </button>
-                </div>
-
                 {/* Auth Input form */}
                 <form onSubmit={handleSubmit} className="space-y-4">
                   
-                  {/* Dynamic Target Input */}
-                  {loginMethod === 'email' ? (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">
-                        Registered Email Address *
-                      </label>
-                      <div className="relative">
-                        <Mail size={14} className="absolute left-3.5 top-3.5 text-slate-400" />
-                        <input
-                          type="email"
-                          required
-                          placeholder="e.g. rajendra.spe@gmail.com"
-                          value={emailInput}
-                          onChange={(e) => setEmailInput(e.target.value)}
-                          className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs border outline-hidden transition-all ${
-                            darkMode 
-                              ? 'bg-slate-950 border-slate-850 text-white focus:border-indigo-500' 
-                              : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-600 focus:bg-white'
-                          }`}
-                        />
-                      </div>
+                  {/* Single Mobile Number Input */}
+                  <div className="space-y-1.5 mt-4">
+                    <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">
+                      पंजीकृत मोबाइल नंबर (Registered Mobile Number) *
+                    </label>
+                    <div className="relative">
+                      <Phone size={14} className="absolute left-3.5 top-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 9829012345 (या ईमेल आईडी)"
+                        value={phoneInput}
+                        onChange={(e) => setPhoneInput(e.target.value)}
+                        className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs border outline-hidden transition-all ${
+                          darkMode 
+                            ? 'bg-slate-950 border-slate-850 text-white focus:border-indigo-500' 
+                            : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-600 focus:bg-white'
+                        }`}
+                      />
                     </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest block">
-                        Registered Mobile Number *
-                      </label>
-                      <div className="relative">
-                        <Phone size={14} className="absolute left-3.5 top-3.5 text-slate-400" />
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. 9829012345"
-                          value={phoneInput}
-                          onChange={(e) => setPhoneInput(e.target.value)}
-                          className={`w-full pl-10 pr-4 py-2.5 rounded-xl text-xs border outline-hidden transition-all ${
-                            darkMode 
-                              ? 'bg-slate-950 border-slate-850 text-white focus:border-indigo-500' 
-                              : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-600 focus:bg-white'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  </div>
 
                   {/* Password input with toggle button */}
                   <div className="space-y-1.5">
