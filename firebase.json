@@ -1,0 +1,12 @@
+{
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "firestore.rules"
+    },
+    {
+      "database": "ai-studio-smartspe-ae2e519b-ee52-4141-bae0-51df8d89a572",
+      "rules": "firestore.rules"
+    }
+  ]
+}
