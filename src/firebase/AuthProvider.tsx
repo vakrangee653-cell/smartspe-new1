@@ -11,7 +11,12 @@ import {
   doc, 
   getDoc, 
   setDoc, 
-  updateDoc 
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  deleteDoc
 } from 'firebase/firestore';
 import { auth, db, googleProvider, mapUserDoc } from '../firebase';
 import { Operator, UserRole } from '../types';
@@ -84,52 +89,107 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
-        setUser(firebaseUser);
         const emailKey = (firebaseUser.email || '').toLowerCase().trim();
 
-        // 1. Fetch user profile from Firestore 'users' collection
         try {
           const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDocSnap = await getDoc(userDocRef);
+          let userDocSnap = await getDoc(userDocRef);
+          let profileData: any = null;
 
           if (userDocSnap.exists()) {
-            setUserProfile(userDocSnap.data() as Operator);
+            profileData = userDocSnap.data();
           } else {
-            // Check if email matches a preset operator to auto-create profile
-            const preset = PRESET_OPERATORS[emailKey];
-            const defaultRole: UserRole = (emailKey === 'vakrangee653@gmail.com') ? 'Super Admin' : (emailKey.includes('admin') || emailKey === 'smartspeatm@gmail.com' ? 'Admin' : 'Operator');
-            
-            const newProfile: Operator = {
-              id: firebaseUser.uid,
-              name: preset?.name || firebaseUser.displayName || 'Operator User',
-              email: emailKey,
-              role: preset?.role || defaultRole,
-              status: 'Active',
-              walletLimit: preset?.walletLimit || 15000,
-              commissionRate: preset?.commissionRate || 12,
-              phoneNumber: preset?.phoneNumber || firebaseUser.phoneNumber || '+91 99999 55555',
-              failedAttempts: 0,
-              isLockedOut: false,
-              createdBy: 'System'
-            };
+            // Operator might have been registered manually by an Admin using a random temporary ID (e.g., op-234)
+            // Let's query the 'users' collection to check if they exist by email.
+            const usersCol = collection(db, 'users');
+            const q = query(usersCol, where('email', '==', emailKey));
+            const querySnap = await getDocs(q);
 
-            const mappedProfile = mapUserDoc(newProfile);
-            await setDoc(userDocRef, mappedProfile);
-            setUserProfile(mappedProfile);
+            if (!querySnap.empty) {
+              const matchedDoc = querySnap.docs[0];
+              const matchedData = matchedDoc.data();
+              
+              // Migrate this document to the actual Firebase user UID
+              profileData = {
+                ...matchedData,
+                id: firebaseUser.uid,
+                uid: firebaseUser.uid,
+                adminId: matchedData.adminId || matchedData.createdBy || ''
+              };
+
+              await setDoc(userDocRef, mapUserDoc(profileData));
+
+              // Safely delete the old temporary document
+              if (matchedDoc.id !== firebaseUser.uid) {
+                await deleteDoc(doc(db, 'users', matchedDoc.id));
+              }
+              console.log('[AuthProvider] Migrated temporary operator ID document to permanent Firebase UID:', firebaseUser.uid);
+            }
+          }
+
+          if (profileData) {
+            // Block login if user is Inactive or locked out
+            if (profileData.status !== 'Active' || profileData.isLockedOut) {
+              console.warn('[AuthProvider] Blocked sign-in for inactive or locked-out account:', emailKey);
+              setUser(null);
+              setUserProfile(null);
+              await firebaseSignOut(auth);
+              setLoading(false);
+              return;
+            }
+            setUser(firebaseUser);
+            setUserProfile(mapUserDoc(profileData));
+          } else {
+            // No profile found anywhere. Auto-create only for Super Admin to seed the system.
+            if (emailKey === 'vakrangee653@gmail.com') {
+              const preset = PRESET_OPERATORS[emailKey];
+              const newProfile: Operator = {
+                id: firebaseUser.uid,
+                name: preset?.name || firebaseUser.displayName || 'Vakrangee Super Admin',
+                email: emailKey,
+                role: 'Super Admin',
+                status: 'Active',
+                walletLimit: preset?.walletLimit || 1000000,
+                commissionRate: preset?.commissionRate || 100,
+                phoneNumber: preset?.phoneNumber || firebaseUser.phoneNumber || '+91 90010 12345',
+                failedAttempts: 0,
+                isLockedOut: false,
+                createdBy: 'System'
+              };
+
+              const mappedProfile = mapUserDoc(newProfile);
+              await setDoc(userDocRef, mappedProfile);
+              setUser(firebaseUser);
+              setUserProfile(mappedProfile);
+            } else {
+              // Deleted or unregistered user! Sign out immediately and do not allow recreation!
+              console.warn('[AuthProvider] Deletion Check: Profile not found. Signing out deleted/unregistered user:', emailKey);
+              setUser(null);
+              setUserProfile(null);
+              await firebaseSignOut(auth);
+              setLoading(false);
+              return;
+            }
           }
         } catch (err) {
-          console.error('[AuthProvider] Error fetching or creating profile in Firestore:', err);
-          // Temporary fallback profile in memory to prevent app crashes
-          setUserProfile({
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Operator User',
-            email: emailKey,
-            role: emailKey === 'vakrangee653@gmail.com' ? 'Super Admin' : 'Operator',
-            status: 'Active',
-            walletLimit: 15000,
-            commissionRate: 12,
-            phoneNumber: '+91 99999 55555',
-          });
+          console.error('[AuthProvider] Error in auth profiling / migration:', err);
+          if (emailKey === 'vakrangee653@gmail.com') {
+            setUser(firebaseUser);
+            setUserProfile({
+              id: firebaseUser.uid,
+              name: 'Vakrangee Super Admin',
+              email: emailKey,
+              role: 'Super Admin',
+              status: 'Active',
+              walletLimit: 1000000,
+              commissionRate: 100,
+              phoneNumber: '+91 90010 12345',
+            });
+          } else {
+            setUser(null);
+            setUserProfile(null);
+            await firebaseSignOut(auth);
+          }
         }
       } else {
         setUser(null);

@@ -144,6 +144,15 @@ export default function App() {
         setState(prev => {
           const existingOp = prev.operators.find(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
           
+          if (existingOp && existingOp.status !== 'Active') {
+            console.warn('[App] Security block: Account is inactive or deleted. Signing out:', email);
+            firebaseSignOut(auth).catch(err => console.error(err));
+            return {
+              ...prev,
+              currentUser: null
+            };
+          }
+
           let resolvedRole: UserRole = role;
           let resolvedCreatedBy: string | undefined = undefined;
           let resolvedName = firebaseUser.displayName || 'Vakrangee Operator';
@@ -169,20 +178,29 @@ export default function App() {
           let updatedOperators = [...prev.operators];
           
           if (!exists) {
-            console.log('[App] Auto-registering logged-in Google/Firebase user into central operator list:', email);
-            updatedOperators.push({
-              id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'Vakrangee Operator',
-              email: email,
-              role: role === 'Super Admin' ? 'Super Admin' : 'Admin',
-              status: 'Active',
-              walletLimit: 15000,
-              commissionRate: 12,
-              phoneNumber: firebaseUser.phoneNumber || '+91 99999 55555',
-              failedAttempts: 0,
-              isLockedOut: false,
-              createdBy: 'op-super'
-            });
+            if (email === 'vakrangee653@gmail.com') {
+              console.log('[App] Auto-registering logged-in Super Admin:', email);
+              updatedOperators.push({
+                id: firebaseUser.uid,
+                name: 'Vakrangee Super Admin',
+                email: email,
+                role: 'Super Admin',
+                status: 'Active',
+                walletLimit: 1000000,
+                commissionRate: 100,
+                phoneNumber: '+91 90010 12345',
+                failedAttempts: 0,
+                isLockedOut: false,
+                createdBy: 'System'
+              });
+            } else {
+              console.warn('[App] Deletion check: Non-registered or deleted user tried to access, signing out:', email);
+              firebaseSignOut(auth).catch(err => console.error(err));
+              return {
+                ...prev,
+                currentUser: null
+              };
+            }
           } else {
             updatedOperators = updatedOperators.map(op => {
               if (op.email.toLowerCase() === email || op.id === firebaseUser.uid) {
