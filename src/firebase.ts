@@ -1090,7 +1090,8 @@ export async function clearFirestoreDatabase() {
     'settlements',
     'activity_timeline',
     'backups',
-    'commission_rules'
+    'commission_rules',
+    'user_states'
   ];
 
   console.log('[Firestore Wipe] Initiating full cloud database wipe...');

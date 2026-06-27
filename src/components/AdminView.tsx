@@ -589,6 +589,52 @@ export default function AdminView({
     }
   };
 
+  // Delete all operators except Super Admin (vakrangee653@gmail.com)
+  const handleDeleteAllOperators = async () => {
+    if (currentUser?.role !== 'Super Admin') {
+      alert("❌ त्रुटि: केवल सुपर एडमिन ही सभी ऑपरेटरों को डिलीट कर सकते हैं! (Deletion only permitted for Super Admin)");
+      return;
+    }
+
+    if (!confirm("⚠️ चेतावनी: क्या आप निश्चित रूप से सुपर एडमिन के अलावा सभी ऑपरेटर और एडमिन खातों को संपूर्ण रूप से डिलीट करना चाहते हैं? (This will permanently delete all other operator accounts from both Cloud Firebase and Local Storage. This cannot be undone!)")) {
+      return;
+    }
+
+    try {
+      const updatedOperators = state.operators.filter(op => 
+        op.email.toLowerCase().trim() === 'vakrangee653@gmail.com' || op.role === 'Super Admin'
+      );
+
+      const deleteLog = {
+        id: `log-${Date.now().toString().slice(-5)}`,
+        timestamp: new Date().toISOString(),
+        operatorId: currentUser.id,
+        operatorName: currentUser.name,
+        role: 'Super Admin' as const,
+        action: `Permanently deleted ALL other operator and admin accounts from the registry`,
+        status: 'Success' as const,
+        ipAddress: '47.11.134.19',
+        device: 'Super Admin terminal root',
+        browser: 'Cryptographically bounded browser'
+      };
+
+      onUpdateState({
+        ...state,
+        operators: updatedOperators,
+        securityLogs: [deleteLog, ...state.securityLogs]
+      });
+
+      // Clear the local storage cache completely so old operators never load back on fresh load
+      localStorage.removeItem('csp_bilin_v02_state');
+      localStorage.removeItem('smartspe_clean_state');
+
+      alert("🗑️ सुपर एडमिन के अलावा सभी खाते सफलतापूर्वक हटा दिए गए हैं! (All operator accounts except Super Admin have been deleted successfully!)");
+    } catch (err: any) {
+      console.error(err);
+      alert(`❌ त्रुटि: ${err.message}`);
+    }
+  };
+
   // Recharge Operator Wallet balance
   const handleRechargeOperator = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1391,6 +1437,7 @@ export default function AdminView({
     try {
       alert("Please wait... Wiping the Cloud Firestore database. This may take 3 to 5 seconds.");
       await clearFirestoreDatabase();
+      localStorage.removeItem('csp_bilin_v02_state');
       localStorage.removeItem('smartspe_clean_state');
       localStorage.removeItem('smartspe_cloud_backups');
       alert("✅ All cloud and local database records wiped successfully! The system will now reload in its factory-fresh default state.");
@@ -1682,17 +1729,28 @@ export default function AdminView({
             <div className={`p-5 rounded-3xl border space-y-4 animate-fade-in ${
               darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
             }`}>
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-3">
                 <div>
                   <h3 className="font-bold text-base font-display">Branch Operators roster</h3>
                   <p className="text-xs text-slate-400">Allocate dynamic daily wallet limits and customized commission yields</p>
                 </div>
-                <button
-                  onClick={() => setIsAddingOperator(!isAddingOperator)}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl cursor-pointer"
-                >
-                  {isAddingOperator ? 'Close form' : 'Add Operator +'}
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {currentUser?.role === 'Super Admin' && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAllOperators}
+                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-750 text-white text-xs font-bold rounded-xl cursor-pointer transition-all shadow-sm shadow-rose-500/10"
+                    >
+                      🗑️ सभी ऑपरेटर हटाएं (Delete All Operators)
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setIsAddingOperator(!isAddingOperator)}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl cursor-pointer"
+                  >
+                    {isAddingOperator ? 'Close form' : 'Add Operator +'}
+                  </button>
+                </div>
               </div>
 
               {isAddingOperator && (
