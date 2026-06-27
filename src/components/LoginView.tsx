@@ -144,7 +144,7 @@ export default function LoginView({
   };
 
   // Handle standard manual login validation
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
@@ -204,96 +204,115 @@ export default function LoginView({
       return;
     }
 
-    // Validate Password and Authenticate via Firebase Auth
-    loginWithEmail(operatorMatched.email, enteredPass)
-      .then((cred) => {
-        // Reset failed attempts on success
-        const updatedOperators = state.operators.map(op => {
-          if (op.id === operatorMatched.id) {
-            return {
-              ...op,
-              failedAttempts: 0,
-              isLockedOut: false
-            };
-          }
-          return op;
-        });
-
-        // Direct Login for Operator, Admin, and Super Admin roles
-        const successLog: SecurityLog = {
-          id: `log-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          operatorId: cred.user.uid,
-          operatorName: operatorMatched.name,
-          role: operatorMatched.role,
-          action: `Direct Login Success via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
-          status: 'Success',
-          ipAddress: browserDetails.ip,
-          device: browserDetails.device,
-          browser: browserDetails.browser
-        };
-
-        onUpdateState({
-          ...state,
-          operators: updatedOperators,
-          currentUser: {
-            id: cred.user.uid,
-            name: `${operatorMatched.name} (${operatorMatched.role})`,
-            email: operatorMatched.email,
-            role: operatorMatched.role,
-            phoneNumber: operatorMatched.phoneNumber,
-            createdBy: operatorMatched.createdBy,
-            photoUrl: operatorMatched.photoUrl || '',
-            address: operatorMatched.address || ''
-          },
-          securityLogs: [successLog, ...state.securityLogs]
-        });
-        setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Login)`);
-        return;
-      })
-      .catch((err: any) => {
-        // Increase failed attempts
-        const currentFailed = (operatorMatched.failedAttempts || 0) + 1;
-        const maxAttempts = (operatorMatched.role === 'Super Admin' || operatorMatched.role === 'Admin') ? 999 : 10;
-        const isNowLocked = currentFailed >= maxAttempts;
-
-        const updatedOperators = state.operators.map(op => {
-          if (op.id === operatorMatched.id) {
-            return {
-              ...op,
-              failedAttempts: currentFailed,
-              isLockedOut: isNowLocked ? true : op.isLockedOut
-            };
-          }
-          return op;
-        });
-
-        // Record failed security audit log
-        const failedLog: SecurityLog = {
-          id: `log-${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          operatorId: operatorMatched.id,
-          operatorName: operatorMatched.name,
-          role: operatorMatched.role,
-          action: `Failed Login Step (${currentFailed}/${maxAttempts} Attempts) via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
-          status: isNowLocked ? 'Blocked' : 'Failed',
-          ipAddress: browserDetails.ip,
-          device: browserDetails.device,
-          browser: browserDetails.browser
-        };
-
-        onUpdateState({
-          ...state,
-          operators: updatedOperators,
-          securityLogs: [failedLog, ...state.securityLogs]
-        });
-
-        if (isNowLocked) {
-          setErrorMsg(`❌ ${maxAttempts} असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after ${maxAttempts} failed login attempts)`);
+    try {
+      let cred;
+      try {
+        cred = await loginWithEmail(operatorMatched.email, enteredPass);
+      } catch (err: any) {
+        // If password is correct according to state.operators but account doesn't exist in Firebase Auth (e.g. newly added back or deleted)
+        if (
+          (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') &&
+          enteredPass === operatorMatched.password
+        ) {
+          console.log('[LoginView] Auto-registering operator with matched password in Firebase Auth:', operatorMatched.email);
+          cred = await registerWithEmail(
+            operatorMatched.email,
+            enteredPass,
+            operatorMatched.name,
+            operatorMatched.phoneNumber,
+            operatorMatched.role
+          );
         } else {
-          setErrorMsg(`❌ गलत पासवर्ड या प्रमाणीकरण त्रुटि! शेष अवसर: ${maxAttempts - currentFailed} (Wrong password or authentication error. Remaining attempts: ${maxAttempts - currentFailed})`);
+          throw err;
         }
+      }
+
+      // Reset failed attempts on success and link ID to correct Firebase UID
+      const updatedOperators = state.operators.map(op => {
+        if (op.id === operatorMatched.id) {
+          return {
+            ...op,
+            id: cred.user.uid, // Map custom ID to real Firebase UID
+            failedAttempts: 0,
+            isLockedOut: false
+          };
+        }
+        return op;
       });
+
+      // Direct Login for Operator, Admin, and Super Admin roles
+      const successLog: SecurityLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        operatorId: cred.user.uid,
+        operatorName: operatorMatched.name,
+        role: operatorMatched.role,
+        action: `Direct Login Success via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Firebase Authenticated)`,
+        status: 'Success',
+        ipAddress: browserDetails.ip,
+        device: browserDetails.device,
+        browser: browserDetails.browser
+      };
+
+      onUpdateState({
+        ...state,
+        operators: updatedOperators,
+        currentUser: {
+          id: cred.user.uid,
+          name: `${operatorMatched.name} (${operatorMatched.role})`,
+          email: operatorMatched.email,
+          role: operatorMatched.role,
+          phoneNumber: operatorMatched.phoneNumber,
+          createdBy: operatorMatched.createdBy,
+          photoUrl: operatorMatched.photoUrl || '',
+          address: operatorMatched.address || ''
+        },
+        securityLogs: [successLog, ...state.securityLogs]
+      });
+      setSuccessMsg(`🎉 लॉगिन सफल! स्वागत है, ${operatorMatched.name} (Direct Login)`);
+    } catch (err: any) {
+      // Increase failed attempts
+      const currentFailed = (operatorMatched.failedAttempts || 0) + 1;
+      const maxAttempts = (operatorMatched.role === 'Super Admin' || operatorMatched.role === 'Admin') ? 999 : 10;
+      const isNowLocked = currentFailed >= maxAttempts;
+
+      const updatedOperators = state.operators.map(op => {
+        if (op.id === operatorMatched.id) {
+          return {
+            ...op,
+            failedAttempts: currentFailed,
+            isLockedOut: isNowLocked ? true : op.isLockedOut
+          };
+        }
+        return op;
+      });
+
+      // Record failed security audit log
+      const failedLog: SecurityLog = {
+        id: `log-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        operatorId: operatorMatched.id,
+        operatorName: operatorMatched.name,
+        role: operatorMatched.role,
+        action: `Failed Login Step (${currentFailed}/${maxAttempts} Attempts) via ${detectionMethod === 'email' ? 'Email' : 'Phone'} (Auth Error: ${err.message})`,
+        status: isNowLocked ? 'Blocked' : 'Failed',
+        ipAddress: browserDetails.ip,
+        device: browserDetails.device,
+        browser: browserDetails.browser
+      };
+
+      onUpdateState({
+        ...state,
+        operators: updatedOperators,
+        securityLogs: [failedLog, ...state.securityLogs]
+      });
+
+      if (isNowLocked) {
+        setErrorMsg(`❌ ${maxAttempts} असफल लॉगिन प्रयासों के बाद आपका खाता लॉक कर दिया गया है! (Account locked out after ${maxAttempts} failed login attempts)`);
+      } else {
+        setErrorMsg(`❌ गलत पासवर्ड या प्रमाणीकरण त्रुटि! शेष अवसर: ${maxAttempts - currentFailed} (Wrong password or authentication error. Remaining attempts: ${maxAttempts - currentFailed})`);
+      }
+    }
   };
 
   // Preset demo bypass login
