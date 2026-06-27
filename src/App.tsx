@@ -73,80 +73,73 @@ export default function App() {
 
   // Real-time Firebase Auth Status Listener and Firestore Synchronizer
   React.useEffect(() => {
-    const syncState = async () => {
-      setFirebaseLoading(true);
-      try {
-        console.log('[App] Initial Sync - Fetching central operator registry...');
-        const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
-        if (centralState) {
-          setState(prev => {
-            let loadedOperators = centralState.operators || prev.operators;
-            const hasSmartSPEATM = loadedOperators.some((op: any) => op.email.toLowerCase() === 'smartspeatm@gmail.com');
-            
-            if (!hasSmartSPEATM) {
-              console.log('[App] Proactively injecting smartspeatm@gmail.com into loaded operator registry');
-              loadedOperators = [
-                ...loadedOperators,
-                {
-                  id: 'op-smartspeatm',
-                  name: 'SmartSPE ATM Admin',
-                  email: 'smartspeatm@gmail.com',
-                  role: 'Admin',
-                  status: 'Active',
-                  walletLimit: 500000,
-                  commissionRate: 80,
-                  phoneNumber: '+91 99999 77777',
-                  password: 'admin123',
-                  failedAttempts: 0,
-                  isLockedOut: false,
-                  createdBy: 'op-super'
-                }
-              ];
-              saveStateToFirestore('shared_shop_state', {
-                operators: loadedOperators,
-                securityLogs: centralState.securityLogs || prev.securityLogs,
-                commissionSettings: centralState.commissionSettings || prev.commissionSettings
-              });
-            }
-
-            const merged = {
-              ...prev,
-              operators: loadedOperators,
-              securityLogs: centralState.securityLogs || prev.securityLogs,
-              commissionSettings: centralState.commissionSettings || prev.commissionSettings
-            };
-            saveState(merged);
-            return merged;
-          });
-        } else {
-          const defaultState = getInitialState();
-          await saveStateToFirestore('shared_shop_state', {
-            operators: defaultState.operators,
-            securityLogs: defaultState.securityLogs,
-            commissionSettings: defaultState.commissionSettings
-          });
-        }
-      } catch (err) {
-        console.error('[App] Failed to load central state:', err);
-      } finally {
-        setFirebaseLoading(false);
-      }
-    };
-
-    syncState();
+    setFirebaseLoading(true);
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        console.log('[App] Auth State Changed: User Signed In', firebaseUser.uid);
+        console.log('[App] Auth State Changed: User Signed In. Fetching authoritative central registry...', firebaseUser.uid);
         const email = (firebaseUser.email || '').toLowerCase().trim();
         const role: UserRole = (email.includes('admin') || email === 'vakrangee653@gmail.com') ? 'Super Admin' : 'Admin';
         
+        let freshOperators: any[] = [];
+        let freshSettings: any = null;
+        let freshLogs: any[] = [];
+        
+        try {
+          const centralState = await getStateFromFirestore('shared_shop_state', 'Super Admin', 'shared_shop_state');
+          if (centralState) {
+            freshOperators = centralState.operators || [];
+            freshSettings = centralState.commissionSettings;
+            freshLogs = centralState.securityLogs || [];
+          } else {
+            // Seed default if centralState does not exist
+            const defaultState = getInitialState();
+            freshOperators = defaultState.operators;
+            freshSettings = defaultState.commissionSettings;
+            freshLogs = defaultState.securityLogs;
+            await saveStateToFirestore('shared_shop_state', {
+              operators: freshOperators,
+              securityLogs: freshLogs,
+              commissionSettings: freshSettings
+            });
+          }
+
+          // Inject smartspeatm@gmail.com dynamically if missing
+          const hasSmartSPEATM = freshOperators.some((op: any) => op.email.toLowerCase() === 'smartspeatm@gmail.com');
+          if (!hasSmartSPEATM) {
+            console.log('[App] Proactively injecting smartspeatm@gmail.com into fresh operator registry');
+            freshOperators.push({
+              id: 'op-smartspeatm',
+              name: 'SmartSPE ATM Admin',
+              email: 'smartspeatm@gmail.com',
+              role: 'Admin',
+              status: 'Active',
+              walletLimit: 500000,
+              commissionRate: 80,
+              phoneNumber: '+91 99999 77777',
+              password: 'admin123',
+              failedAttempts: 0,
+              isLockedOut: false,
+              createdBy: 'op-super'
+            });
+            await saveStateToFirestore('shared_shop_state', {
+              operators: freshOperators,
+              securityLogs: freshLogs,
+              commissionSettings: freshSettings
+            });
+          }
+        } catch (err) {
+          console.error('[App] Failed to fetch central state during authenticated sync:', err);
+        }
+
         setState(prev => {
-          const existingOp = prev.operators.find(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
+          const activeOps = freshOperators.length > 0 ? freshOperators : prev.operators;
+          const existingOp = activeOps.find(op => op.id === firebaseUser.uid || op.email.toLowerCase() === email);
           
           if (existingOp && existingOp.status !== 'Active') {
             console.warn('[App] Security block: Account is inactive or deleted. Signing out:', email);
             firebaseSignOut(auth).catch(err => console.error(err));
+            setFirebaseLoading(false);
             return {
               ...prev,
               currentUser: null
@@ -175,7 +168,7 @@ export default function App() {
           };
           
           const exists = !!existingOp;
-          let updatedOperators = [...prev.operators];
+          let updatedOperators = [...activeOps];
           
           if (!exists) {
             if (email === 'vakrangee653@gmail.com') {
@@ -196,6 +189,7 @@ export default function App() {
             } else {
               console.warn('[App] Deletion check: Non-registered or deleted user tried to access, signing out:', email);
               firebaseSignOut(auth).catch(err => console.error(err));
+              setFirebaseLoading(false);
               return {
                 ...prev,
                 currentUser: null
@@ -217,7 +211,9 @@ export default function App() {
           const clean = {
             ...prev,
             currentUser: updatedUser,
-            operators: updatedOperators
+            operators: updatedOperators,
+            securityLogs: freshLogs.length > 0 ? freshLogs : prev.securityLogs,
+            commissionSettings: freshSettings || prev.commissionSettings
           };
           
           saveState(clean);
@@ -229,6 +225,7 @@ export default function App() {
             commissionSettings: clean.commissionSettings
           });
           
+          setFirebaseLoading(false);
           return clean;
         });
       } else {
@@ -244,6 +241,7 @@ export default function App() {
           saveState(clean);
           return clean;
         });
+        setFirebaseLoading(false);
       }
     });
     return () => unsubscribe();
