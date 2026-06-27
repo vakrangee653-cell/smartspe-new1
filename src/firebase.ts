@@ -510,42 +510,48 @@ export async function saveStateToFirestore(userId: string, state: any) {
     const role = currentUser?.role || 'Super Admin';
     const activeAdminId = role === 'Operator' ? (currentUser?.createdBy || '') : (currentUser?.id || '');
 
-    // 2. Proactively sync to separate collections with correct mapping!
-    if (state.operators) {
+    // 2. Proactively sync to separate collections with correct mapping ONLY IF they are provided!
+    if (state.operators !== undefined) {
       await syncUsersToFirestore(state.operators);
     }
-    await syncWalletsToFirestore(state.wallet, state.aepsWallet, state.emitraWallet);
-    if (state.transactions) {
+    if (state.wallet !== undefined && state.aepsWallet !== undefined && state.emitraWallet !== undefined) {
+      await syncWalletsToFirestore(state.wallet, state.aepsWallet, state.emitraWallet);
+    }
+    if (state.transactions !== undefined) {
       await syncTransactionsToFirestore(state.transactions, activeAdminId);
     }
-    if (state.emitraApplications) {
+    if (state.emitraApplications !== undefined) {
       await syncEmitraApplicationsToFirestore(state.emitraApplications, activeAdminId);
     }
-    if (state.offlineWork) {
+    if (state.offlineWork !== undefined) {
       await syncOfflineWorkToFirestore(state.offlineWork, activeAdminId);
     }
-    if (state.expenses) {
+    if (state.expenses !== undefined) {
       await syncExpensesToFirestore(state.expenses, activeAdminId);
     }
-    if (state.shopDetails || state.commissionSettings) {
+    if (state.shopDetails !== undefined && state.commissionSettings !== undefined) {
       await syncSettingsToFirestore(state.shopDetails, state.commissionSettings);
+    } else if (state.shopDetails !== undefined) {
+      await setDoc(doc(db, 'settings', 'shopDetails'), state.shopDetails || {});
+    } else if (state.commissionSettings !== undefined) {
+      await setDoc(doc(db, 'settings', 'commissionSettings'), state.commissionSettings || {});
     }
-    if (state.securityLogs) {
+    if (state.securityLogs !== undefined) {
       await syncAuditLogsToFirestore(state.securityLogs, activeAdminId);
     }
-    if (state.walletLedger) {
+    if (state.walletLedger !== undefined) {
       await syncWalletLedgerToFirestore(state.walletLedger);
     }
-    if (state.notifications) {
+    if (state.notifications !== undefined) {
       await syncNotificationsToFirestore(state.notifications);
     }
-    if (state.settlements) {
+    if (state.settlements !== undefined) {
       await syncSettlementsToFirestore(state.settlements);
     }
-    if (state.activityTimeline) {
+    if (state.activityTimeline !== undefined) {
       await syncActivityTimelineToFirestore(state.activityTimeline);
     }
-    if (state.commissionRules) {
+    if (state.commissionRules !== undefined) {
       await syncCommissionRulesToFirestore(state.commissionRules);
     }
   } catch (err) {
@@ -907,13 +913,23 @@ export async function executeBankingTransaction(params: {
 export async function getStateFromFirestore(userId: string, userRole?: string, currentUserId?: string): Promise<any | null> {
   if (!userId) return null;
   try {
+    // 1. First, always read the full single document (authoritative complete state)
+    const legacyDoc = await getDoc(doc(db, 'user_states', userId));
+    const legacyData = legacyDoc.exists() ? legacyDoc.data() : null;
+
     // Determine the role and context to filter Firestore queries server-side
     const role = userRole || (userId === 'shared_shop_state' || userId === 'op-super' ? 'Super Admin' : 'Admin');
     const filterId = currentUserId || (userId.startsWith('shop_state_') ? userId.replace('shop_state_', '') : userId);
 
-    console.log(`[Firebase Server-Query] Filtering collections. Role: ${role}, Context UID: ${filterId}`);
+    console.log(`[Firebase Server-Query] Loading state for ${userId}. Role: ${role}, Context UID: ${filterId}`);
 
-    // Load from separate collections with query-level filtering
+    // 2. If legacyData exists, return it immediately as the single source of truth.
+    // This guarantees perfect integrity, zero lag, and prevents cross-contamination of balances.
+    if (legacyData) {
+      return legacyData;
+    }
+
+    // 3. Fallback: If the complete document doesn't exist, reconstruct from individual collections
     const users = await fetchUsersFromFirestore(role, filterId);
     const wallets = await fetchWalletsFromFirestore();
     const transactions = await fetchTransactionsFromFirestore(role, filterId);
@@ -928,33 +944,41 @@ export async function getStateFromFirestore(userId: string, userRole?: string, c
     const timeline = await fetchActivityTimelineFromFirestore(role, filterId);
     const commissionRules = await fetchCommissionRulesFromFirestore();
 
-    const legacyDoc = await getDoc(doc(db, 'user_states', userId));
-    const legacyData = legacyDoc.exists() ? legacyDoc.data() : null;
-
-    if (users.length > 0 || wallets || transactions.length > 0 || settings || auditLogs.length > 0) {
-      console.log(`[Firebase] Loaded state from collections with server query filters applied for role: ${role}`);
-      return {
-        ...(legacyData || {}),
-        operators: users.map(u => mapUserDoc(u)),
-        wallet: wallets?.wallet || legacyData?.wallet || { balance: 0, withdrawnCommission: 0, totalCommissionEarned: 0, lastUpdated: new Date().toISOString() },
-        aepsWallet: wallets?.aepsWallet || legacyData?.aepsWallet || { onlineBalance: 0, physicalBalance: 0, lastUpdated: new Date().toISOString() },
-        emitraWallet: wallets?.emitraWallet || legacyData?.emitraWallet || { balance: 0, lastUpdated: new Date().toISOString() },
-        transactions: transactions,
-        emitraApplications: emitraApps.length > 0 ? emitraApps : (legacyData?.emitraApplications || []),
-        offlineWork: offlineWork.length > 0 ? offlineWork : (legacyData?.offlineWork || []),
-        expenses: expenses.length > 0 ? expenses : (legacyData?.expenses || []),
-        shopDetails: settings?.shopDetails || legacyData?.shopDetails,
-        commissionSettings: settings?.commissionSettings || legacyData?.commissionSettings,
-        securityLogs: auditLogs,
-        walletLedger: walletLedger,
-        notifications: notifications.length > 0 ? notifications : (legacyData?.notifications || []),
-        settlements: settlements.length > 0 ? settlements : (legacyData?.settlements || []),
-        activityTimeline: timeline.length > 0 ? timeline : (legacyData?.activityTimeline || []),
-        commissionRules: commissionRules.length > 0 ? commissionRules : (legacyData?.commissionRules || [])
-      };
-    }
-
-    return legacyData;
+    return {
+      operators: users.map(u => mapUserDoc(u)),
+      wallet: wallets?.wallet || { balance: 0, withdrawnCommission: 0, totalCommissionEarned: 0, lastUpdated: new Date().toISOString() },
+      aepsWallet: wallets?.aepsWallet || { onlineBalance: 0, physicalBalance: 0, lastUpdated: new Date().toISOString() },
+      emitraWallet: wallets?.emitraWallet || { balance: 0, lastUpdated: new Date().toISOString() },
+      transactions: transactions,
+      emitraApplications: emitraApps,
+      offlineWork: offlineWork,
+      expenses: expenses,
+      shopDetails: settings?.shopDetails || {
+        name: 'Vakrangee Kendra (वाकरंगी केंद्र)',
+        mobile: '+91 90010 12345',
+        gmail: 'vakrangee653@gmail.com',
+        address: 'मुख्य चौराहा, वार्ड नं. 12, राजस्थान',
+        logoUrl: ''
+      },
+      commissionSettings: settings?.commissionSettings || {
+        depositRate: 0.2,
+        withdrawalRate: 0.5,
+        transferRate: 15.0,
+        dmtRate: 75.0,
+        emitraRates: {},
+        emitraFees: {},
+        offlineFees: {},
+        offlineCosts: {},
+        customExpenseCategories: [],
+        staffNames: []
+      },
+      securityLogs: auditLogs,
+      walletLedger: walletLedger,
+      notifications: notifications,
+      settlements: settlements,
+      activityTimeline: timeline,
+      commissionRules: commissionRules
+    };
   } catch (err) {
     console.error('[Firebase Error getting state]', err);
     return null;
