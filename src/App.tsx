@@ -30,7 +30,8 @@ import {
   VolumeX, 
   HelpCircle,
   Menu,
-  ShieldAlert
+  ShieldAlert,
+  RefreshCw
 } from 'lucide-react';
 import { formatINR, deduplicateById } from './utils';
 
@@ -39,8 +40,18 @@ export const metadata = {
   description: "CSC Management & Billing Software"
 };
 
-const getCanonicalDocId = (id: string, email?: string): string => {
-  const e = (email || '').toLowerCase().trim();
+const getCanonicalDocId = (id: string, email?: string, operators?: any[]): string => {
+  let e = (email || '').toLowerCase().trim();
+  if (operators) {
+    const found = operators.find(op => op.id === id);
+    if (found && found.email) {
+      e = found.email.toLowerCase().trim();
+    }
+    const superAdmin = operators.find(op => op.role === 'Super Admin');
+    if (superAdmin && (id === superAdmin.id || id === 'op-super')) {
+      return 'op-super';
+    }
+  }
   if (e === 'vakrangee653@gmail.com' || id === 'op-super') return 'op-super';
   if (e === 'rajendra.spe@gmail.com' || id === 'op-1') return 'op-1';
   if (e === 'smartspeatm@gmail.com' || id === 'op-smartspeatm') return 'op-smartspeatm';
@@ -69,6 +80,9 @@ export default function App() {
 
   // Selected Branch ID for Super Admin View Isolation and Switcher
   const [selectedBranchId, setSelectedBranchId] = React.useState<string>('all');
+
+  // Trigger state for manual/automatic refresh of Cloud database records
+  const [refreshTrigger, setRefreshTrigger] = React.useState(0);
 
   // Real-time Firebase Auth Status Listener and Firestore Synchronizer
   React.useEffect(() => {
@@ -258,7 +272,7 @@ export default function App() {
       try {
         console.log('[App] Running Google UID document migration checks...');
         for (const op of state.operators) {
-          const canonicalId = getCanonicalDocId(op.id, op.email);
+          const canonicalId = getCanonicalDocId(op.id, op.email, state.operators);
           if (canonicalId !== op.id) {
             // This is a Google UID document! Check if it has any active data
             const personalDocId = `shop_state_${op.id}`;
@@ -515,7 +529,7 @@ export default function App() {
             // Fetch states for all Admins
             const fetchedStates = await Promise.all(
               admins.map(async (admin) => {
-                const docId = getCanonicalDocId(admin.id, admin.email);
+                const docId = getCanonicalDocId(admin.id, admin.email, state.operators);
                 const data = await getStateFromFirestore(`shop_state_${docId}`, 'Admin', admin.id);
                 return { adminId: admin.id, data };
               })
@@ -658,7 +672,7 @@ export default function App() {
           }
         } else {
           // Fetch specific branch data
-          const canonicalBranchId = getCanonicalDocId(selectedBranchId, state.operators.find(o => o.id === selectedBranchId)?.email);
+          const canonicalBranchId = getCanonicalDocId(selectedBranchId, state.operators.find(o => o.id === selectedBranchId)?.email, state.operators);
           console.log(`[App] Super Admin - Fetching branch data for Admin: ${selectedBranchId} (resolved: ${canonicalBranchId})`);
           setFirebaseLoading(true);
           try {
@@ -696,7 +710,7 @@ export default function App() {
           : state.currentUser.id;
           
         const matchedOp = state.operators.find(o => o.id === rawAdminId);
-        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || state.currentUser.email);
+        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || state.currentUser.email, state.operators);
           
         console.log(`[App] Current user is ${state.currentUser.role}. Branch Admin ID resolved: ${adminId}`);
         setFirebaseLoading(true);
@@ -848,7 +862,17 @@ export default function App() {
     };
 
     syncIsolatedState();
-  }, [state.currentUser?.id, selectedBranchId, JSON.stringify(state.operators.map(o => ({ id: o.id, email: o.email, role: o.role })))]);
+  }, [state.currentUser?.id, selectedBranchId, refreshTrigger, JSON.stringify(state.operators.map(o => ({ id: o.id, email: o.email, role: o.role })))]);
+
+  // Periodic background auto-sync to retrieve records newly logged by branch operators
+  React.useEffect(() => {
+    if (!state.currentUser) return;
+    const interval = setInterval(() => {
+      console.log('[App] Background cloud synchronization poll triggered...');
+      setRefreshTrigger(prev => prev + 1);
+    }, 25000); // Poll every 25 seconds
+    return () => clearInterval(interval);
+  }, [state.currentUser?.id]);
 
   // Synchronize state changes to localStorage and cloud Firestore
   const handleUpdateState = (rawNewState: AppState) => {
@@ -890,7 +914,7 @@ export default function App() {
         // (If they are in 'all' view, saving is blocked or saves to 'op-super' to protect data)
         if (selectedBranchId !== 'all') {
           const matchedOp = newState.operators.find(o => o.id === selectedBranchId);
-          const canonicalBranchId = getCanonicalDocId(selectedBranchId, matchedOp?.email);
+          const canonicalBranchId = getCanonicalDocId(selectedBranchId, matchedOp?.email, newState.operators);
           const isolatedData = {
             shopDetails: newState.shopDetails,
             wallet: newState.wallet,
@@ -926,7 +950,7 @@ export default function App() {
           : newState.currentUser.id;
 
         const matchedOp = newState.operators.find(o => o.id === rawAdminId);
-        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || newState.currentUser.email);
+        const adminId = getCanonicalDocId(rawAdminId, matchedOp?.email || newState.currentUser.email, newState.operators);
 
         const isolatedData = {
           shopDetails: newState.shopDetails,
@@ -1347,6 +1371,27 @@ export default function App() {
                       </option>
                     ))}
                 </select>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRefreshTrigger(prev => prev + 1);
+                    // Add quick CSS animation trigger
+                    const btn = document.getElementById('btn-manual-sync');
+                    if (btn) {
+                      btn.classList.add('animate-spin');
+                      setTimeout(() => btn.classList.remove('animate-spin'), 1000);
+                    }
+                  }}
+                  title="डेटा रीफ्रेश करें (Force Cloud Sync)"
+                  className={`p-1.5 rounded-xl border flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95 ${
+                    darkMode 
+                      ? 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700' 
+                      : 'bg-white border-blue-200 text-slate-600 hover:text-slate-900 hover:border-blue-350'
+                  }`}
+                >
+                  <RefreshCw id="btn-manual-sync" size={13} className={firebaseLoading ? 'animate-spin text-blue-500' : ''} />
+                </button>
               </div>
             )}
           </div>
