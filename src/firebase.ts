@@ -615,64 +615,18 @@ export async function fetchAuditLogsFromFirestore(userRole?: string, userId?: st
 export async function saveStateToFirestore(userId: string, state: any) {
   if (!userId) return;
   try {
-    // 1. Sync to single document for safety/compatibility
-    const docRef = doc(db, 'user_states', userId);
-    await setDoc(docRef, state);
-
-    // Resolve active admin context to partition individual collections
-    const currentUser = state.currentUser;
-    const role = currentUser?.role || 'Super Admin';
-    const activeAdminId = role === 'Operator' ? (currentUser?.createdBy || '') : (currentUser?.id || '');
-
-    // 2. Proactively sync to separate collections with correct mapping ONLY IF they are provided!
-    if (state.operators !== undefined) {
-      await syncUsersToFirestore(state.operators);
+    const response = await fetch(`/api/state/${userId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state })
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error saving state: ${response.statusText}`);
     }
-    if (state.wallet !== undefined && state.aepsWallet !== undefined && state.emitraWallet !== undefined) {
-      await syncWalletsToFirestore(state.wallet, state.aepsWallet, state.emitraWallet);
-    }
-    if (state.transactions !== undefined) {
-      await syncTransactionsToFirestore(state.transactions, activeAdminId);
-    }
-    if (state.emitraApplications !== undefined) {
-      await syncEmitraApplicationsToFirestore(state.emitraApplications, activeAdminId);
-    }
-    if (state.offlineWork !== undefined) {
-      await syncOfflineWorkToFirestore(state.offlineWork, activeAdminId);
-    }
-    if (state.expenses !== undefined) {
-      await syncExpensesToFirestore(state.expenses, activeAdminId);
-    }
-    if (state.customers !== undefined) {
-      await syncCustomersToFirestore(state.customers, activeAdminId);
-    }
-    if (state.shopDetails !== undefined && state.commissionSettings !== undefined) {
-      await syncSettingsToFirestore(state.shopDetails, state.commissionSettings);
-    } else if (state.shopDetails !== undefined) {
-      await setDoc(doc(db, 'settings', 'shopDetails'), state.shopDetails || {});
-    } else if (state.commissionSettings !== undefined) {
-      await setDoc(doc(db, 'settings', 'commissionSettings'), state.commissionSettings || {});
-    }
-    if (state.securityLogs !== undefined) {
-      await syncAuditLogsToFirestore(state.securityLogs, activeAdminId);
-    }
-    if (state.walletLedger !== undefined) {
-      await syncWalletLedgerToFirestore(state.walletLedger);
-    }
-    if (state.notifications !== undefined) {
-      await syncNotificationsToFirestore(state.notifications);
-    }
-    if (state.settlements !== undefined) {
-      await syncSettlementsToFirestore(state.settlements);
-    }
-    if (state.activityTimeline !== undefined) {
-      await syncActivityTimelineToFirestore(state.activityTimeline);
-    }
-    if (state.commissionRules !== undefined) {
-      await syncCommissionRulesToFirestore(state.commissionRules);
-    }
+    const data = await response.json();
+    console.log('[PostgreSQL API] Saved state for:', userId, data);
   } catch (err) {
-    console.error('[Firebase Sync Error]', err);
+    console.error('[PostgreSQL API] Error saving state:', err);
   }
 }
 
@@ -916,113 +870,74 @@ export async function executeBankingTransaction(params: {
   operatorId: string;
   operatorName: string;
 }) {
-  const txnId = `TXN${Math.floor(100000 + Math.random() * 900000)}`;
-  const ledgerId = `LEDGER_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
-  const now = new Date().toISOString();
-  
-  const txRef = doc(db, 'transactions', txnId);
-  const ledgerRef = doc(db, 'wallet_ledger', ledgerId);
-  const walletRef = doc(db, 'wallets', params.userId);
-  
   try {
-    const result = await runTransaction(db, async (transaction) => {
-      const txSnap = await transaction.get(txRef);
-      if (txSnap.exists()) {
-        throw new Error('Duplicate transaction ID detected!');
-      }
-      
-      const walletSnap = await transaction.get(walletRef);
-      let openingBalance = 15000;
-      if (walletSnap.exists()) {
-        const d = walletSnap.data();
-        openingBalance = d.balance !== undefined ? d.balance : (d.currentBalance !== undefined ? d.currentBalance : 15000);
-      }
-      
-      let credit = 0;
-      let debit = 0;
-      
-      if (params.type === 'Deposit' || params.type === 'DMT' || params.type === 'UPI Payment') {
-        debit = params.amount + params.fee;
-      } else if (params.type === 'Withdrawal') {
-        credit = params.amount + params.commission;
-      }
-      
-      const closingBalance = openingBalance + credit - debit;
-      const availableBalance = closingBalance;
-      
-      if (debit > 0 && openingBalance < debit) {
-        throw new Error(`Insufficient wallet balance! Available: ₹${openingBalance}, Transaction requires: ₹${debit}`);
-      }
-      
-      const updatedWallet = {
-        userId: params.userId,
-        userName: params.userName,
-        role: params.userRole,
-        balance: availableBalance,
-        openingBalance,
-        currentBalance: closingBalance,
-        credit,
-        debit,
-        closingBalance,
-        availableBalance,
-        lastUpdated: now
-      };
-      
-      const newTransaction = {
-        id: txnId,
-        timestamp: now,
-        customerName: params.customerName,
-        aadhaarNumber: params.aadhaarNumber,
-        type: params.type as 'Deposit' | 'Withdrawal' | 'DMT' | 'UPI Payment',
-        amount: params.amount,
-        fee: params.fee,
-        char: params.fee,
-        commission: params.commission,
-        status: 'Success' as const,
-        operatorId: params.operatorId,
-        operatorName: params.operatorName,
-        adminId: params.adminId,
-        utrNumber: params.utrNumber || `${Math.floor(300000000000 + Math.random() * 600000000000)}`,
-        walletDebited: debit > 0,
-        createdBy: params.adminId,
-        openingBalance,
-        closingBalance,
-        date: now.split('T')[0],
-        time: now.split('T')[1].substring(0, 8)
-      };
-      
-      const newLedger = {
-        id: ledgerId,
-        userId: params.userId,
-        userName: params.userName,
-        role: params.userRole,
-        transactionId: txnId,
-        service: params.type,
-        openingBalance,
-        credit,
-        debit,
-        closingBalance,
-        availableBalance,
-        status: 'Success' as const,
-        operatorId: params.operatorId,
-        adminId: params.adminId,
-        timestamp: now
-      };
-      
-      transaction.set(txRef, newTransaction);
-      transaction.set(ledgerRef, newLedger);
-      transaction.set(walletRef, updatedWallet);
-      
-      return {
-        transaction: newTransaction,
-        ledger: newLedger,
-        wallet: updatedWallet
-      };
+    const response = await fetch('/api/banking/transaction', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
     });
-    
-    return result;
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP error executing transaction: ${response.statusText}`);
+    }
+    const result = await response.json();
+    if (result.success) {
+      const credit = params.type === 'Withdrawal' ? (params.amount + params.commission) : 0;
+      const debit = params.type !== 'Withdrawal' ? (params.amount + params.fee) : 0;
+      const openingBalance = result.closingBalance - credit + debit;
+
+      return {
+        transaction: {
+          id: result.txnId,
+          timestamp: new Date().toISOString(),
+          customerName: params.customerName,
+          aadhaarNumber: params.aadhaarNumber || '',
+          type: params.type,
+          amount: params.amount,
+          fee: params.fee,
+          commission: params.commission,
+          status: 'Success' as const,
+          operatorId: params.operatorId,
+          operatorName: params.operatorName,
+          adminId: params.adminId,
+          utrNumber: params.utrNumber,
+          walletDebited: debit > 0
+        },
+        ledger: {
+          id: result.ledgerId,
+          userId: params.userId,
+          userName: params.userName,
+          role: params.userRole,
+          transactionId: result.txnId,
+          service: params.type,
+          openingBalance,
+          credit,
+          debit,
+          closingBalance: result.closingBalance,
+          availableBalance: result.closingBalance,
+          status: 'Success' as const,
+          operatorId: params.operatorId,
+          adminId: params.adminId,
+          timestamp: new Date().toISOString()
+        },
+        wallet: {
+          userId: params.userId,
+          userName: params.userName,
+          role: params.userRole,
+          balance: result.closingBalance,
+          openingBalance,
+          currentBalance: result.closingBalance,
+          credit,
+          debit,
+          closingBalance: result.closingBalance,
+          availableBalance: result.closingBalance,
+          lastUpdated: new Date().toISOString()
+        }
+      };
+    }
+    throw new Error(result.error || 'Failed to execute transaction.');
   } catch (err) {
-    console.error('Transaction rolled back:', err);
+    console.error('[PostgreSQL API] Transaction failed:', err);
     throw err;
   }
 }
@@ -1030,148 +945,20 @@ export async function executeBankingTransaction(params: {
 export async function getStateFromFirestore(userId: string, userRole?: string, currentUserId?: string): Promise<any | null> {
   if (!userId) return null;
   try {
-    // 1. First, always read the full single document (authoritative complete state)
-    const legacyDoc = await getDoc(doc(db, 'user_states', userId));
-    const legacyData = legacyDoc.exists() ? legacyDoc.data() : null;
-
-    // Determine the role and context to filter Firestore queries server-side
     const role = userRole || (userId === 'shared_shop_state' || userId === 'op-super' ? 'Super Admin' : 'Admin');
-    const filterId = currentUserId || (userId.startsWith('shop_state_') ? userId.replace('shop_state_', '') : userId);
-
-    console.log(`[Firebase Server-Query] Loading state for ${userId}. Role: ${role}, Context UID: ${filterId}`);
-
-    // 2. If legacyData exists, return it after merging dynamic collections.
-    // This guarantees perfect integrity, zero lag, and prevents cross-contamination of balances.
-    if (legacyData) {
-      if (userId === 'shared_shop_state') {
-        try {
-          const users = await fetchUsersFromFirestore(role, filterId);
-          if (users && users.length > 0) {
-            legacyData.operators = users.map(u => mapUserDoc(u));
-          }
-        } catch (opSyncErr) {
-          console.error('[Firebase] Failed to dynamically sync operators list, returning cached list:', opSyncErr);
-        }
-        return legacyData;
-      }
-
-      // For branch states, dynamically pull collections to prevent clobbering/overwriting
-      try {
-        console.log(`[Firebase Server-Query] Pulling dynamic collections for legacyData: ${userId}`);
-        const [
-          users,
-          transactions,
-          emitraApps,
-          offlineWork,
-          expenses,
-          customers,
-          settlements,
-          notifications,
-          timeline
-        ] = await Promise.all([
-          fetchUsersFromFirestore(role, filterId),
-          fetchTransactionsFromFirestore(role, filterId),
-          fetchEmitraApplicationsFromFirestore(role, filterId),
-          fetchOfflineWorkFromFirestore(role, filterId),
-          fetchExpensesFromFirestore(role, filterId),
-          fetchCustomersFromFirestore(role, filterId),
-          fetchSettlementsFromFirestore(role, filterId),
-          fetchNotificationsFromFirestore(role, filterId),
-          fetchActivityTimelineFromFirestore(role, filterId)
-        ]);
-
-        const mergeAndDeduplicate = (legacyArr: any[] | undefined, fetchedArr: any[] | undefined, key: string = 'id') => {
-          const legacy = Array.isArray(legacyArr) ? legacyArr : [];
-          const fetched = Array.isArray(fetchedArr) ? fetchedArr : [];
-          if (fetched.length === 0) return legacy;
-          const merged = [...legacy];
-          fetched.forEach(item => {
-            if (item) {
-              const itemId = item[key] || item.id;
-              if (itemId) {
-                const idx = merged.findIndex(x => (x[key] || x.id) === itemId);
-                if (idx > -1) {
-                  merged[idx] = { ...merged[idx], ...item }; // merge/update latest
-                } else {
-                  merged.push(item);
-                }
-              }
-            }
-          });
-          return merged;
-        };
-
-        if (users && users.length > 0) {
-          legacyData.operators = users.map(u => mapUserDoc(u));
-        }
-
-        legacyData.transactions = mergeAndDeduplicate(legacyData.transactions, transactions);
-        legacyData.emitraApplications = mergeAndDeduplicate(legacyData.emitraApplications, emitraApps);
-        legacyData.offlineWork = mergeAndDeduplicate(legacyData.offlineWork, offlineWork);
-        legacyData.expenses = mergeAndDeduplicate(legacyData.expenses, expenses);
-        legacyData.customers = mergeAndDeduplicate(legacyData.customers, customers);
-        legacyData.settlements = mergeAndDeduplicate(legacyData.settlements, settlements);
-        legacyData.notifications = mergeAndDeduplicate(legacyData.notifications, notifications, 'notificationId');
-        legacyData.activityTimeline = mergeAndDeduplicate(legacyData.activityTimeline, timeline);
-      } catch (colErr) {
-        console.error('[Firebase] Failed to pull dynamic collections, returning raw legacyData:', colErr);
-      }
-
-      return legacyData;
+    const filterId = currentUserId || '';
+    const url = `/api/state/${userId}?role=${encodeURIComponent(role)}&currentUserId=${encodeURIComponent(filterId)}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error fetching state: ${response.status}`);
     }
-
-    // 3. Fallback: If the complete document doesn't exist, reconstruct from individual collections
-    const users = await fetchUsersFromFirestore(role, filterId);
-    const wallets = await fetchWalletsFromFirestore();
-    const transactions = await fetchTransactionsFromFirestore(role, filterId);
-    const settings = await fetchSettingsFromFirestore();
-    const auditLogs = await fetchAuditLogsFromFirestore(role, filterId);
-    const emitraApps = await fetchEmitraApplicationsFromFirestore(role, filterId);
-    const offlineWork = await fetchOfflineWorkFromFirestore(role, filterId);
-    const expenses = await fetchExpensesFromFirestore(role, filterId);
-    const walletLedger = await fetchWalletLedgerFromFirestore(role, filterId);
-    const notifications = await fetchNotificationsFromFirestore(role, filterId);
-    const settlements = await fetchSettlementsFromFirestore(role, filterId);
-    const timeline = await fetchActivityTimelineFromFirestore(role, filterId);
-    const commissionRules = await fetchCommissionRulesFromFirestore();
-
-    return {
-      operators: users.map(u => mapUserDoc(u)),
-      wallet: wallets?.wallet || { balance: 0, withdrawnCommission: 0, totalCommissionEarned: 0, lastUpdated: new Date().toISOString() },
-      aepsWallet: wallets?.aepsWallet || { onlineBalance: 0, physicalBalance: 0, lastUpdated: new Date().toISOString() },
-      emitraWallet: wallets?.emitraWallet || { balance: 0, lastUpdated: new Date().toISOString() },
-      transactions: transactions,
-      emitraApplications: emitraApps,
-      offlineWork: offlineWork,
-      expenses: expenses,
-      shopDetails: settings?.shopDetails || {
-        name: 'Vakrangee Kendra (वाकरंगी केंद्र)',
-        mobile: '+91 90010 12345',
-        gmail: 'vakrangee653@gmail.com',
-        address: 'मुख्य चौराहा, वार्ड नं. 12, राजस्थान',
-        logoUrl: ''
-      },
-      commissionSettings: settings?.commissionSettings || {
-        depositRate: 0.2,
-        withdrawalRate: 0.5,
-        transferRate: 15.0,
-        dmtRate: 75.0,
-        emitraRates: {},
-        emitraFees: {},
-        offlineFees: {},
-        offlineCosts: {},
-        customExpenseCategories: [],
-        staffNames: []
-      },
-      securityLogs: auditLogs,
-      walletLedger: walletLedger,
-      notifications: notifications,
-      settlements: settlements,
-      activityTimeline: timeline,
-      commissionRules: commissionRules
-    };
+    const data = await response.json();
+    if (data.success && data.state) {
+      return data.state;
+    }
+    return null;
   } catch (err) {
-    console.error('[Firebase Error getting state]', err);
+    console.error('[PostgreSQL API] Error getting state:', err);
     return null;
   }
 }

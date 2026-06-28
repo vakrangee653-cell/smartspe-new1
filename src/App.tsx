@@ -62,6 +62,11 @@ const getCanonicalDocId = (id: string, email?: string, operators?: any[]): strin
 
 export default function App() {
   const [state, setState] = React.useState<AppState>(() => getInitialState());
+  const stateRef = React.useRef(state);
+  React.useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
   const [activeTab, setActiveTab] = React.useState('dashboard');
   const [darkMode, setDarkMode] = React.useState(false);
   const [isLocked, setIsLocked] = React.useState(false);
@@ -685,14 +690,14 @@ export default function App() {
                 const merged = {
                   ...prev,
                   shopDetails: isolatedData.shopDetails || prev.shopDetails,
-                  wallet: isolatedData.wallet || prev.wallet,
-                  aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
-                  emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
-                  customers: deduplicateById(isolatedData.customers || prev.customers),
-                  transactions: deduplicateById(isolatedData.transactions || prev.transactions),
-                  emitraApplications: deduplicateById(isolatedData.emitraApplications || prev.emitraApplications),
-                  offlineWork: deduplicateById(isolatedData.offlineWork || prev.offlineWork),
-                  expenses: deduplicateById(isolatedData.expenses || prev.expenses),
+                  wallet: { ...(prev.wallet || {}), ...(isolatedData.wallet || {}) },
+                  aepsWallet: { ...(prev.aepsWallet || {}), ...(isolatedData.aepsWallet || {}) },
+                  emitraWallet: { ...(prev.emitraWallet || {}), ...(isolatedData.emitraWallet || {}) },
+                  customers: deduplicateById([...(prev.customers || []), ...(isolatedData.customers || [])]),
+                  transactions: deduplicateById([...(prev.transactions || []), ...(isolatedData.transactions || [])]),
+                  emitraApplications: deduplicateById([...(prev.emitraApplications || []), ...(isolatedData.emitraApplications || [])]),
+                  offlineWork: deduplicateById([...(prev.offlineWork || []), ...(isolatedData.offlineWork || [])]),
+                  expenses: deduplicateById([...(prev.expenses || []), ...(isolatedData.expenses || [])]),
                 };
                 saveState(merged);
                 return merged;
@@ -828,14 +833,14 @@ export default function App() {
               const merged = {
                 ...prev,
                 shopDetails: isolatedData.shopDetails || prev.shopDetails,
-                wallet: isolatedData.wallet || prev.wallet,
-                aepsWallet: isolatedData.aepsWallet || prev.aepsWallet,
-                emitraWallet: isolatedData.emitraWallet || prev.emitraWallet,
-                customers: deduplicateById(isolatedData.customers || prev.customers),
-                transactions: deduplicateById(isolatedData.transactions || prev.transactions),
-                emitraApplications: deduplicateById(isolatedData.emitraApplications || prev.emitraApplications),
-                offlineWork: deduplicateById(isolatedData.offlineWork || prev.offlineWork),
-                expenses: deduplicateById(isolatedData.expenses || prev.expenses),
+                wallet: { ...(prev.wallet || {}), ...(isolatedData.wallet || {}) },
+                aepsWallet: { ...(prev.aepsWallet || {}), ...(isolatedData.aepsWallet || {}) },
+                emitraWallet: { ...(prev.emitraWallet || {}), ...(isolatedData.emitraWallet || {}) },
+                customers: deduplicateById([...(prev.customers || []), ...(isolatedData.customers || [])]),
+                transactions: deduplicateById([...(prev.transactions || []), ...(isolatedData.transactions || [])]),
+                emitraApplications: deduplicateById([...(prev.emitraApplications || []), ...(isolatedData.emitraApplications || [])]),
+                offlineWork: deduplicateById([...(prev.offlineWork || []), ...(isolatedData.offlineWork || [])]),
+                expenses: deduplicateById([...(prev.expenses || []), ...(isolatedData.expenses || [])]),
               };
               saveState(merged);
               return merged;
